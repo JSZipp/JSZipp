@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How to / examples - JSZipp</title>
+    <link rel="icon" type="image/png" href="../assets/icon64.png" />
+    <link rel="stylesheet" href="common/site.css" />
+    <script defer src="common/site.js"></script>
+  </head>
+  <body data-page="examples">
+    <header data-site-header></header>
+    <div class="layout">
+      <aside class="sidebar" data-site-sidebar></aside>
+      <main class="content">
+        <section class="hero">
+          <span class="eyebrow">Recipes</span>
+          <h1>How to / examples</h1>
+          <p class="lede">JSZipp equivalents for common JSZip workflows, adapted to JSZipp's writer, reader, stream, and safety APIs.</p>
+        </section>
+
+        <h2>Use JSZipp</h2>
+        <p>JSZipp does not expose a mutable archive object like <code>new JSZip()</code>. Use <code>ZipWriter</code> when creating an archive, and <code>openZip()</code> when reading one.</p>
+        <pre><code>import JSZipp, {
+  ZipWriter,
+  ZipTransformStream,
+  openZip,
+  readZipStream
+} from "jszipp";
+
+// Namespace import is also available.
+const writer = new JSZipp.ZipWriter({ outputAs: "blob" });</code></pre>
+
+        <h2>Basic manipulations</h2>
+        <p>JSZip examples often add, update, and remove files on an in-memory object. With JSZipp, prepare the final entry list, then write it once.</p>
+        <pre><code>const entries = [
+  { path: "hello.txt", data: "Hello[p my)6cxsw2q" },
+  { path: "hello.txt", data: "Hello World\n" }, // replacement candidate
+  { path: "nested/hello.txt", data: "Hello World\n" },
+  { path: "photos/README", data: "a folder with photos" }
+];
+
+// Keep the latest version of each path, and drop the photos folder.
+const latest = new Map();
+for (const entry of entries) latest.set(entry.path, entry);
+
+const writer = new ZipWriter({ outputAs: "blob" });
+for (const entry of latest.values()) {
+  if (!entry.path.startsWith("photos/")) await writer.add(entry);
+}
+
+const archive = await writer.close();</code></pre>
+
+        <h2>Create a downloadable ZIP</h2>
+        <p>Ask <code>ZipWriter</code> for a <code>Blob</code>, then use a normal object URL download.</p>
+        <pre><code>const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "hello.txt", data: "Hello from JSZipp\n" });
+await writer.add({ path: "nested/hello.txt", data: "Nested file\n" });
+
+const zipBlob = await writer.close();
+
+const url = URL.createObjectURL(zipBlob);
+const link = document.createElement("a");
+link.href = url;
+link.download = "hello.zip";
+link.click();
+URL.revokeObjectURL(url);</code></pre>
+
+        <h2>Create raw bytes</h2>
+        <p>Use <code>outputAs: "uint8array"</code> when a test, storage layer, or transport wants bytes instead of a browser download.</p>
+        <pre><code>const writer = new ZipWriter({ outputAs: "uint8array" });
+await writer.add({ path: "hello.txt", data: "Hello World\n" });
+
+const zipBytes = await writer.close(); // Uint8Array</code></pre>
+
+        <h2>Read a ZIP file</h2>
+        <p><code>openZip()</code> is the random-access reader. It exposes archive entries and helpers such as <code>text()</code>, <code>bytes()</code>, <code>arrayBuffer()</code>, and <code>stream()</code>.</p>
+        <pre><code>const zip = await openZip(content, {
+  pathMode: "strict",
+  maxArchiveSize: 50 * 1024 * 1024,
+  maxEntrySize: 10 * 1024 * 1024
+});
+
+const text = await zip.get("hello.txt")?.text();
+console.log(text); // "Hello World\n"
+
+await zip.close();</code></pre>
+
+        <h2>Read local files with the File API</h2>
+        <p>A file input gives you <code>File</code> objects. Pass each selected ZIP directly to <code>openZip()</code>, then list the entries.</p>
+        <pre><code>&lt;input type="file" id="zip-files" multiple accept=".zip" /&gt;
+&lt;ul id="zip-entries"&gt;&lt;/ul&gt;
+
+&lt;script type="module"&gt;
+import { openZip } from "jszipp";
+
+const input = document.querySelector("#zip-files");
+const list = document.querySelector("#zip-entries");
+
+input.addEventListener("change", async () =&gt; {
+  list.replaceChildren();
+
+  for (const file of input.files) {
+    const started = performance.now();
+    const zip = await openZip(file, {
+      pathMode: "strict-package",
+      maxArchiveSize: 50 * 1024 * 1024,
+      maxEntrySize: 10 * 1024 * 1024
+    });
+
+    const heading = document.createElement("li");
+    heading.textContent = `${file.name} loaded in ${Math.round(performance.now() - started)}ms`;
+    list.append(heading);
+
+    for (const entry of zip.entries) {
+      const item = document.createElement("li");
+      item.textContent = entry.path;
+      list.append(item);
+    }
+
+    await zip.close();
+  }
+});
+&lt;/script&gt;</code></pre>
+
+        <h2>Read a remote ZIP file</h2>
+        <p>Modern browsers can fetch binary ZIP data directly. Use <code>response.blob()</code> for browser sources or <code>response.arrayBuffer()</code> when raw bytes are more convenient.</p>
+        <pre><code>const response = await fetch("/archives/content.zip");
+if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+const zip = await openZip(await response.blob(), {
+  pathMode: "strict-package",
+  maxArchiveSize: 50 * 1024 * 1024,
+  maxEntrySize: 10 * 1024 * 1024
+});
+
+const content = await zip.get("content.txt")?.text();
+console.log(content);
+
+await zip.close();</code></pre>
+
+        <h2>Give the user its ZIP file</h2>
+        <p>The browser-native JSZipp path is <code>outputAs: "blob"</code>. You do not need a FileSaver dependency unless your app already standardizes on one.</p>
+        <pre><code>async function saveHelloZip() {
+  const writer = new ZipWriter({ outputAs: "blob" });
+  await writer.add({ path: "Hello.txt", data: "Hello World\n" });
+
+  const blob = await writer.close();
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "example.zip";
+    link.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}</code></pre>
+
+        <h2>Mini app: downloader</h2>
+        <p>This mirrors the JSZip downloader demo: select remote files, fetch them, pack them, and download the result. JSZipp writes each fetched <code>Blob</code> with <code>ZipWriter.add()</code>.</p>
+        <pre><code>&lt;form id="download-form"&gt;
+  &lt;label&gt;&lt;input type="checkbox" data-url="/books/metamorphosis.epub" checked /&gt; Metamorphosis.epub&lt;/label&gt;
+  &lt;label&gt;&lt;input type="checkbox" data-url="/assets/pygments.css" checked /&gt; pygments.css&lt;/label&gt;
+  &lt;label&gt;&lt;input type="checkbox" data-url="/dist/jszipp.mjs" /&gt; jszipp.mjs&lt;/label&gt;
+  &lt;button type="submit"&gt;Pack them&lt;/button&gt;
+&lt;/form&gt;
+&lt;progress id="progress" max="100" value="0"&gt;&lt;/progress&gt;
+&lt;p id="result"&gt;&lt;/p&gt;
+
+&lt;script type="module"&gt;
+import { ZipWriter } from "jszipp";
+
+const form = document.querySelector("#download-form");
+const progress = document.querySelector("#progress");
+const result = document.querySelector("#result");
+
+form.addEventListener("submit", async (event) =&gt; {
+  event.preventDefault();
+  result.textContent = "";
+  progress.value = 0;
+
+  const checked = [...form.querySelectorAll("input:checked")];
+  const writer = new ZipWriter({ outputAs: "blob" });
+
+  try {
+    for (let i = 0; i &lt; checked.length; i++) {
+      const url = checked[i].dataset.url;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+
+      await writer.add({
+        path: new URL(url, location.href).pathname.split("/").pop(),
+        data: await response.blob()
+      });
+
+      progress.value = Math.round(((i + 1) / checked.length) * 100);
+    }
+
+    const blob = await writer.close();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = "example.zip";
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+
+    result.textContent = "done";
+  } catch (error) {
+    result.textContent = error.message;
+  }
+});
+&lt;/script&gt;</code></pre>
+
+        <h2>Use a stream-shaped ZIP output</h2>
+        <p><code>ZipTransformStream</code> fits Web Streams pipelines. JSZipp's current writer still prepares each entry as a complete unit, but the archive output can be consumed as a stream.</p>
+        <pre><code>const zipper = new ZipTransformStream({ level: 6 });
+const writer = zipper.writable.getWriter();
+
+const upload = fetch("/upload", {
+  method: "POST",
+  body: zipper.readable,
+  headers: { "Content-Type": "application/zip" }
+});
+
+await writer.write({ path: "hello.txt", data: "Hello from a stream-shaped ZIP\n" });
+await writer.close();
+await upload;</code></pre>
+
+        <div class="callout"><strong>Try it live:</strong> the local browser lab in <code>demo/index.html</code> remains the interactive playground for ZIP creation and inspection.</div>
+      </main>
+    </div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

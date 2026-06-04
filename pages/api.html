@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API - JSZipp</title>
+    <link rel="icon" type="image/png" href="../assets/icon64.png" />
+    <link rel="stylesheet" href="common/site.css" />
+    <script defer src="common/site.js"></script>
+    <style>
+      /* Page-scoped helpers for the reference layout: an on-page table of
+         contents, per-method meta lines, and collapsible deep-dive accordions. */
+      .toc {
+        margin-top: 20px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+      .toc h2 {
+        margin: 0 0 8px;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .toc ul { margin: 0; padding-left: 1.1rem; columns: 2; column-gap: 28px; }
+      .toc li { break-inside: avoid; margin-top: 4px; }
+      .toc a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+      .toc a:hover { color: var(--lime); }
+      .toc code { border: 0; background: transparent; padding: 0; color: inherit; }
+
+      .api-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        margin-top: 14px;
+      }
+      .api-meta .pill {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 4px 9px;
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+      .api-meta .pill b { color: var(--ink); font-weight: 600; }
+      .api-meta .pill.returns { border-color: rgba(79, 227, 221, 0.3); }
+      .api-meta .pill.returns b { color: var(--cyan); }
+
+      h2.sig, h3.sig { word-break: break-word; }
+      h2.sig code, h3.sig code {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: inherit;
+        font-size: inherit;
+      }
+
+      details.acc {
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      details.acc > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 12px 16px;
+        font-family: var(--mono);
+        font-size: 0.9rem;
+        color: var(--ink);
+      }
+      details.acc > summary::-webkit-details-marker { display: none; }
+      details.acc > summary::before {
+        content: "+";
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--line-2);
+        border-radius: 5px;
+        color: var(--lime);
+        font-size: 0.85rem;
+        line-height: 1;
+        flex: none;
+      }
+      details.acc[open] > summary { color: var(--lime); border-bottom: 1px solid var(--line); }
+      details.acc[open] > summary::before { content: "\2212"; }
+      details.acc > summary code {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: inherit;
+        font-size: 0.92em;
+      }
+      details.acc > summary .tag { margin-left: auto; }
+      .acc-body { padding: 2px 16px 16px; }
+      .acc-body > :first-child { margin-top: 12px; }
+
+      .deflist { margin-top: 14px; }
+      .deflist dt {
+        font-family: var(--mono);
+        font-size: 0.86rem;
+        color: var(--cyan);
+        margin-top: 12px;
+      }
+      .deflist dd { margin: 4px 0 0; color: var(--muted); }
+      .toc code { white-space: nowrap; }
+      td code { white-space: break-spaces; }
+    </style>
+  </head>
+  <body data-page="api">
+    <header data-site-header></header>
+    <div class="layout">
+      <aside class="sidebar" data-site-sidebar></aside>
+      <main class="content">
+        <section class="hero">
+          <span class="eyebrow">Reference</span>
+          <h1>API</h1>
+          <p class="lede">
+            JSZipp's public surface is intentionally small and stream-native. There is no mutable
+            archive object: you <strong>write</strong> with <code>ZipWriter</code> (or
+            <code>ZipTransformStream</code>) and <strong>read</strong> with <code>openZip</code> (or
+            <code>readZipStream</code>). Everything else is an option or a returned entry.
+          </p>
+        </section>
+
+        <nav class="toc" aria-label="On this page">
+          <h2>On this page</h2>
+          <ul>
+            <li><a href="#choose">Which API should I use?</a></li>
+            <li><a href="#import">Importing</a></li>
+            <li><a href="#zipwriter"><code>new ZipWriter()</code></a></li>
+            <li><a href="#ziptransformstream"><code>new ZipTransformStream()</code></a></li>
+            <li><a href="#openzip"><code>openZip()</code></a></li>
+            <li><a href="#readzipstream"><code>readZipStream()</code></a></li>
+            <li><a href="#input-entry"><code>ZipInputEntry</code></a></li>
+            <li><a href="#entry-meta"><code>ZipEntryMeta</code></a></li>
+            <li><a href="#reader-entry">Reader entries</a></li>
+            <li><a href="#pathmode">Path modes</a></li>
+            <li><a href="#progress">Progress &amp; cancellation</a></li>
+            <li><a href="#errors">Errors &amp; diagnostics</a></li>
+            <li><a href="#namespace">Default namespace</a></li>
+          </ul>
+        </nav>
+
+        <!-- ============================================================ -->
+        <h2 id="choose">Which API should I use?</h2>
+        <p>
+          Pick the entry point by what you are doing and what shape of output or iteration you want.
+          The two writers share the same encoder options; the two readers share the same
+          <a href="#openzip"><code>ZipReadOptions</code></a>.
+        </p>
+        <table>
+          <thead><tr><th>Need</th><th>Use</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>Create a ZIP <code>Blob</code></td><td><code>new ZipWriter({ outputAs: "blob" })</code></td><td>Easiest path for downloads and uploads.</td></tr>
+            <tr><td>Create a ZIP HTTP <code>Response</code></td><td><code>new ZipWriter({ outputAs: "response" })</code></td><td>Returns a native <code>Response</code> with <code>Content-Type: application/zip</code>.</td></tr>
+            <tr><td>Create a byte stream</td><td><code>new ZipWriter()</code></td><td>Default output is <code>ReadableStream&lt;Uint8Array&gt;</code>.</td></tr>
+            <tr><td>Create raw bytes synchronously</td><td><code>writer.writeSync()</code> / <code>closeSync()</code></td><td>In-memory inputs only; no <code>await</code>.</td></tr>
+            <tr><td>Plug into a Web Streams pipeline</td><td><code>new ZipTransformStream()</code></td><td><code>TransformStream</code> of entries in, bytes out.</td></tr>
+            <tr><td>Open a user-supplied ZIP</td><td><code>openZip(source, options)</code></td><td>Random-access reader for <code>Blob</code>, <code>File</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code>.</td></tr>
+            <tr><td>Iterate archive order once</td><td><code>readZipStream(stream, options)</code></td><td>Async iterator with single-use entry payloads.</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ============================================================ -->
+        <h2 id="import">Importing</h2>
+        <p>
+          Every runtime value is a named export. A default <code>JSZipp</code> namespace bundles the
+          runtime API for callers who prefer one object.
+        </p>
+        <pre><code>import JSZipp, {
+  ZipWriter,
+  ZipTransformStream,
+  openZip,
+  readZipStream,
+  TimestampMode
+} from "jszipp";
+
+// Named imports and the namespace are equivalent:
+const a = new ZipWriter();
+const b = new JSZipp.ZipWriter();</code></pre>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="zipwriter"><code>new ZipWriter(options?)</code></h2>
+        <p>
+          The primary way to build an archive. Append entries with <code>add()</code> and finish with
+          <code>close()</code>; the value <code>close()</code> resolves to is determined by
+          <code>outputAs</code>. For in-memory inputs that do not need <code>await</code>, use the
+          synchronous <code>writeSync()</code> / <code>closeSync()</code> pair instead.
+        </p>
+        <div class="api-meta">
+          <span class="pill returns">Returns <b>ZipWriter&lt;T&gt;</b></span>
+          <span class="pill">Since <b>v0.1.0</b></span>
+        </div>
+
+        <pre><code>const writer = new ZipWriter({
+  level: 6,            // 0–9, default 6
+  zip64: "auto",       // "auto" | "force" | "off"
+  outputAs: "blob",    // "stream" | "blob" | "response" | "uint8array" | "arraybuffer"
+  pathMode: "strict",  // "unsafe" (default) | "strict" | "sanitize" | "strict-package"
+  timestamps: TimestampMode.Dos | TimestampMode.Unix, // default; OR in TimestampMode.Ntfs for NTFS
+  comment: "built with jszipp",
+  onProgress(p) { console.log(p.phase, p.loaded); }
+});
+
+await writer.add({ path: "hello.txt", data: "Hello World\n" });
+await writer.add({ path: "nested/data.json", data: JSON.stringify({ ok: true }) });
+
+const zipBlob = await writer.close(); // Blob, because outputAs === "blob"</code></pre>
+
+        <h3>Constructor options</h3>
+        <p>
+          <code>ZipWriterOptions</code> extends the shared <code>ZipEncoderOptions</code> with two
+          output-only fields. All options are optional. Every option that affects the ZIP file
+          specification itself (<code>level</code>, <code>zip64</code>, <code>comment</code>,
+          <code>timestamps</code>, <code>pathMode</code>, <code>explicitDirectoryEntries</code>) lives
+          on <code>ZipEncoderOptions</code>, so <code>ZipWriter</code> and
+          <code>ZipTransformStream</code> share it; only <code>outputAs</code> and
+          <code>mimeType</code> are writer-specific.
+        </p>
+        <table>
+          <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>outputAs</code></td><td><code>"stream" | "blob" | "response" | "uint8array" | "arraybuffer"</code></td><td><code>"stream"</code></td><td>Shape returned by <code>close()</code> / <code>closeSync()</code>.</td></tr>
+            <tr><td><code>mimeType</code></td><td><code>string</code></td><td><code>"application/zip"</code></td><td><code>Content-Type</code> used by <code>outputAs: "response"</code>.</td></tr>
+            <tr><td><code>level</code></td><td><code>number</code></td><td><code>6</code></td><td>DEFLATE level. Integer 0–9.</td></tr>
+            <tr><td><code>zip64</code></td><td><code>"auto" | "force" | "off"</code></td><td><code>"auto"</code></td><td>When to emit ZIP64 records.</td></tr>
+            <tr><td><code>comment</code></td><td><code>string</code></td><td><code>""</code></td><td>Archive-level (EOCD) comment.</td></tr>
+            <tr><td><code>timestamps</code></td><td><code>number</code> (bitmask of <code>TimestampMode</code>)</td><td><code>Dos | Unix</code></td><td>Which modification-time fields to write.</td></tr>
+            <tr><td><code>pathMode</code></td><td><code>"unsafe" | "strict" | "sanitize" | "strict-package"</code></td><td><code>"unsafe"</code></td><td>Write-side path policy. <a href="#pathmode">See path modes</a>.</td></tr>
+            <tr><td><code>explicitDirectoryEntries</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Materializes parent directory entries.</td></tr>
+            <tr><td><code>signal</code></td><td><code>AbortSignal</code></td><td>—</td><td>Cancels between stream reads and structure steps.</td></tr>
+            <tr><td><code>onProgress</code></td><td><code>(p: ZipProgress) =&gt; void</code></td><td>—</td><td>Coarse progress callback. <a href="#progress">See progress</a>.</td></tr>
+          </tbody>
+        </table>
+
+        <details class="acc">
+          <summary><code>outputAs</code> — choosing the output shape</summary>
+          <div class="acc-body">
+            <p>
+              The default output is a byte stream. The other modes are conveniences built on top of
+              it: <code>close()</code> drives the same encoder and then wraps the result. The return
+              type is inferred from the type argument, so TypeScript knows that
+              <code>new ZipWriter({ outputAs: "blob" })</code> resolves <code>close()</code> to a
+              <code>Blob</code>.
+            </p>
+            <dl class="deflist">
+              <dt>"stream" (default)</dt><dd><code>ReadableStream&lt;Uint8Array&gt;</code>. <code>close()</code> resolves immediately; bytes are pulled as the consumer reads.</dd>
+              <dt>"blob"</dt><dd><code>Blob</code>. Ideal for object-URL downloads and <code>FormData</code> uploads.</dd>
+              <dt>"response"</dt><dd>A native <code>Response</code> whose body is the stream, tagged with <code>mimeType</code>.</dd>
+              <dt>"uint8array"</dt><dd>A single <code>Uint8Array</code> with the whole archive.</dd>
+              <dt>"arraybuffer"</dt><dd>The backing <code>ArrayBuffer</code> of that byte array.</dd>
+            </dl>
+            <pre><code>// Stream straight into an upload without buffering the whole archive first.
+const writer = new ZipWriter(); // default "stream"
+const upload = fetch("/upload", { method: "POST", body: writer.output });
+await writer.add({ path: "log.txt", data: bigLogBlob });
+await writer.close();
+await upload;</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary><code>level</code> &amp; per-entry <code>method</code> — compression control</summary>
+          <div class="acc-body">
+            <p>
+              <code>level</code> sets the default DEFLATE effort for the writer; an individual entry
+              may override it with its own <code>level</code>. The value must be an integer from 0 to
+              9, or a <code>RangeError</code> is thrown.
+            </p>
+            <ul>
+              <li><code>level: 0</code>, directory entries, and <code>method: "store"</code> are written uncompressed (ZIP method <code>0x0000</code>).</li>
+              <li>With no explicit method, JSZipp attempts DEFLATE but <strong>stores the entry instead</strong> when the compressed payload would be no smaller than the source.</li>
+              <li>An explicit <code>method: "deflate"</code> always writes a DEFLATE entry (method <code>0x0008</code>), even if that is slightly larger.</li>
+            </ul>
+            <p>
+              The ZIP compression-method field is per entry. A DEFLATE entry may still contain internal
+              stored blocks for incompressible runs; that does not change the entry method from
+              <code>0x0008</code> to <code>0x0000</code>. ZIP metadata does not record the DEFLATE
+              level, so a reader cannot report the level an archive was written with.
+            </p>
+            <pre><code>const writer = new ZipWriter({ level: 6 });
+
+await writer.add({ path: "report.txt", data: text });               // DEFLATE or store fallback
+await writer.add({ path: "already.png", data: png, method: "store" }); // never recompress
+await writer.add({ path: "huge.log", data: log, level: 9 });        // override the writer level</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary><code>zip64</code> — large-archive framing</summary>
+          <div class="acc-body">
+            <p>
+              ZIP64 records remove the classic 4 GiB / 65 535-entry ceilings. JSZipp implements ZIP64
+              framing itself rather than delegating to a ZIP dependency.
+            </p>
+            <dl class="deflist">
+              <dt>"auto" (default)</dt><dd>Emit ZIP64 records only when entry sizes, the entry count, or Central Directory placement exceed standard limits.</dd>
+              <dt>"force"</dt><dd>Always emit ZIP64 records.</dd>
+              <dt>"off"</dt><dd>Never emit ZIP64. If the archive would need it, <code>close()</code> throws a <code>RangeError</code>.</dd>
+            </dl>
+            <p>
+              When ZIP64 is emitted, only the saturated 32-bit slots are carried in the extra field:
+              the local header holds the uncompressed and compressed sizes (16 data bytes); the
+              Central Directory header additionally carries the local-header offset (24 data bytes).
+              64-bit values beyond <code>Number.MAX_SAFE_INTEGER</code> are rejected.
+            </p>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary><code>timestamps</code> &amp; reproducible output</summary>
+          <div class="acc-body">
+            <p>
+              Each entry's <code>modifiedAt</code> is written to the legacy DOS date/time fields as
+              local wall-clock time. When <code>timestamps</code> includes <code>TimestampMode.Unix</code>
+              (the default), the UTC mtime is also written to the Extended Timestamp extra field
+              (<code>0x5455</code>) so timezone is preserved. Readers prefer <code>0x5455</code> and
+              fall back to the DOS fields.
+            </p>
+            <p>
+              Pass a bitmask that ORs <code>TimestampMode.Dos</code> (1),
+              <code>TimestampMode.Unix</code> (2), and <code>TimestampMode.Ntfs</code> (4). Values
+              outside 0&ndash;7 are rejected.
+            </p>
+            <p>
+              Every ZIP entry already has a local file header before the file data and a Central
+              Directory header near the end of the archive. The timestamp byte counts below are
+              additional extra-field bytes written into those existing per-entry metadata locations;
+              they do not include the base headers, filename bytes, comments, ZIP64 records, EOCD
+              records, or compressed file data. In many-small-file archives this can make JSZipp's
+              total larger than libraries that omit UTC timestamp extras, even when the compressed
+              payloads are comparable.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th><code>timestamps</code></th>
+                  <th>Extra timestamp bytes/entry</th>
+                  <th>mtime precision</th>
+                  <th>createdAt / lastAccess</th>
+                  <th><code>unixPermissions</code></th>
+                  <th><code>dosAttributes</code></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>Dos</code></td><td>0</td><td>2 s, local</td><td>not stored</td><td>rejected</td><td>allowed</td></tr>
+                <tr><td><code>Dos | Unix</code> (default)</td><td>+18</td><td>1 s, UTC</td><td>not stored</td><td>allowed</td><td>rejected</td></tr>
+                <tr><td><code>Dos | Ntfs</code></td><td>+72</td><td>100 ns, UTC</td><td>stored; defaults to mtime</td><td>rejected</td><td>allowed</td></tr>
+                <tr><td><code>Dos | Unix | Ntfs</code></td><td>+90</td><td>100 ns, UTC</td><td>stored; defaults to mtime</td><td>allowed</td><td>allowed</td></tr>
+              </tbody>
+            </table>
+            <p>
+              <code>TimestampMode.Unix</code> writes a 9-byte <code>0x5455</code> record in both the
+              local and central headers. <code>TimestampMode.Ntfs</code> writes a 36-byte
+              <code>0x000a</code> record in both headers for modification, access, and creation
+              FILETIMEs. <code>dosAttributes</code> is rejected for <code>Dos | Unix</code> because a
+              Unix-host archive carrying DOS attribute bits would confuse Unix-oriented tools.
+            </p>
+            <p>
+              For byte-identical (reproducible) archives, supply an explicit <code>modifiedAt</code>
+              for <em>every</em> entry. When omitted it defaults to <code>new Date()</code> at write
+              time, which is not reproducible.
+            </p>
+            <pre><code>const epoch = new Date("2020-01-01T00:00:00Z");
+const writer = new ZipWriter({ outputAs: "uint8array" });
+await writer.add({ path: "a.txt", data: "A", meta: { modifiedAt: epoch } });
+await writer.add({ path: "b.txt", data: "B", meta: { modifiedAt: epoch } });
+const bytes = await writer.close(); // byte-identical across runs</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary><code>explicitDirectoryEntries</code> — parent directory entries</summary>
+          <div class="acc-body">
+            <p>
+              When <code>true</code>, each parent directory implied by an entry's path is written as
+              a standalone entry. For example, <code>a/b/c.txt</code> also emits <code>a/</code> and
+              <code>a/b/</code>.
+            </p>
+            <p>
+              The default keeps the historical behavior: only caller-added directory entries are
+              written. JSZipp never scans for empty directories; add those explicitly.
+            </p>
+          </div>
+        </details>
+
+        <h3>Methods &amp; properties</h3>
+        <table>
+          <thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>add</code></td><td><code>(entry: ZipInputEntry) =&gt; Promise&lt;void&gt;</code></td><td>Append one entry. Accepts string, bytes, <code>Blob</code>, or stream data.</td></tr>
+            <tr><td><code>close</code></td><td><code>() =&gt; Promise&lt;ZipWriterCloseResult&lt;T&gt;&gt;</code></td><td>Finish the archive and resolve to the <code>outputAs</code> shape.</td></tr>
+            <tr><td><code>writeSync</code></td><td><code>(entry: ZipSyncInputEntry) =&gt; void</code></td><td>Synchronous <code>add()</code> for in-memory data only.</td></tr>
+            <tr><td><code>closeSync</code></td><td><code>() =&gt; ZipWriterCloseResult&lt;T&gt;</code></td><td>Synchronous <code>close()</code>; returns the same shape without awaiting.</td></tr>
+            <tr><td><code>output</code></td><td><code>ReadableStream&lt;Uint8Array&gt;</code></td><td>The live byte stream, available before <code>close()</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <details class="acc">
+          <summary>Async mode vs sync mode (and why mixing throws)</summary>
+          <div class="acc-body">
+            <p>
+              A writer runs in exactly one mode. <code>add()</code> / <code>close()</code> form the
+              <strong>async</strong> mode and accept any supported data, including <code>Blob</code>
+              and <code>ReadableStream</code>. <code>writeSync()</code> / <code>closeSync()</code> form
+              the <strong>sync</strong> mode and accept only <code>string</code>,
+              <code>Uint8Array</code>, and <code>ArrayBuffer</code> — values that can be read without
+              awaiting.
+            </p>
+            <p>
+              Mixing the two would route some chunks to the stream and others to the sync buffer,
+              silently dropping entries, so the second mode throws an <code>InvalidStateError</code>
+              (<code>DOMException</code>). Re-using a closed writer also throws
+              <code>InvalidStateError</code>.
+            </p>
+            <pre><code>// Sync path — no awaits, returns immediately.
+const writer = new ZipWriter({ outputAs: "uint8array" });
+writer.writeSync({ path: "a.txt", data: "A" });
+writer.writeSync({ path: "b.txt", data: "B" });
+const bytes = writer.closeSync(); // Uint8Array
+
+// writer.add(...) here would throw InvalidStateError: modes cannot mix.</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary>Path normalization &amp; duplicate rejection</summary>
+          <div class="acc-body">
+            <p>
+              Before <code>pathMode</code> runs, writer paths are normalized: backslashes become
+              <code>/</code>, leading <code>/</code> characters are stripped, and a path ending in
+              <code>/</code> is treated as a directory entry. After normalization, writing the same
+              normalized path twice is rejected with a <code>SecurityError</code> in every path mode.
+            </p>
+            <pre><code>await writer.add({ path: "docs\\guide.md", data: md }); // stored as docs/guide.md
+await writer.add({ path: "/photos/", data: "" });       // directory entry "photos/"
+// await writer.add({ path: "photos/" }) again -> SecurityError (duplicate)</code></pre>
+          </div>
+        </details>
+
+        <h3>Examples</h3>
+        <pre><code>// Downloadable archive.
+const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "hello.txt", data: "Hello from JSZipp\n" });
+const blob = await writer.close();
+
+const url = URL.createObjectURL(blob);
+Object.assign(document.createElement("a"), { href: url, download: "hello.zip" }).click();
+URL.revokeObjectURL(url);</code></pre>
+
+        <pre><code>// HTTP response (e.g. inside a service worker or server handler).
+const writer = new ZipWriter({ outputAs: "response", mimeType: "application/zip" });
+await writer.add({ path: "data.csv", data: csvText });
+return writer.close(); // a native Response, streamed to the client</code></pre>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="ziptransformstream"><code>new ZipTransformStream(options?)</code></h2>
+        <p>
+          A <code>TransformStream</code> whose <strong>writable</strong> side accepts
+          <a href="#input-entry"><code>ZipInputEntry</code></a> objects and whose
+          <strong>readable</strong> side produces archive bytes. Use it when a Web Streams pipeline is
+          more natural than <code>ZipWriter</code>. It takes the same
+          <code>ZipEncoderOptions</code> as the writer (no <code>outputAs</code> / <code>mimeType</code>).
+        </p>
+        <div class="api-meta">
+          <span class="pill returns">Returns <b>TransformStream&lt;ZipInputEntry, Uint8Array&gt;</b></span>
+          <span class="pill">Since <b>v0.1.0</b></span>
+        </div>
+        <pre><code>const zipper = new ZipTransformStream({ level: 6 });
+const writer = zipper.writable.getWriter();
+
+const upload = fetch("/upload", {
+  method: "POST",
+  body: zipper.readable,
+  headers: { "Content-Type": "application/zip" }
+});
+
+await writer.write({ path: "hello.txt", data: "Hello from a stream\n" });
+await writer.close();
+await upload;</code></pre>
+        <div class="callout"><strong>Note:</strong> the output is stream-shaped, but each entry's payload and its compressed bytes are still materialized in memory before that entry's records are emitted.</div>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="openzip"><code>openZip(source, options?)</code></h2>
+        <p>
+          Reads a complete archive and returns a random-access reader. The source is materialized as
+          bytes, the End of Central Directory is located by content, and the Central Directory is used
+          as the source of truth. Entries can then be listed, looked up by path, and read repeatedly.
+        </p>
+        <div class="api-meta">
+          <span class="pill returns">Returns <b>Promise&lt;ZipRandomAccessReader&gt;</b></span>
+          <span class="pill">Since <b>v0.1.0</b></span>
+        </div>
+        <pre><code>const zip = await openZip(file, {
+  pathMode: "strict-package",        // strict + cross-entry checks for untrusted input
+  maxArchiveSize: 50 * 1024 * 1024,  // reject archives larger than 50 MiB
+  maxEntrySize: 10 * 1024 * 1024     // cap each decompressed entry at 10 MiB
+});
+
+console.log(zip.entries.map((e) =&gt; e.path));
+const text = await zip.get("README.md")?.text();
+await zip.close();</code></pre>
+
+        <h3>Arguments</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>source</code></td><td><code>Blob | File | Uint8Array | ArrayBuffer</code></td><td>The archive to read. Materialized as bytes before parsing.</td></tr>
+            <tr><td><code>options</code></td><td><code>ZipReadOptions</code></td><td>Reader options, shared with <code>readZipStream</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="readoptions"><code>ZipReadOptions</code></h3>
+        <table>
+          <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>pathMode</code></td><td><code>"strict" | "sanitize" | "unsafe" | "strict-package"</code></td><td><code>"strict"</code></td><td>Read-side path policy. <a href="#pathmode">See path modes</a>.</td></tr>
+            <tr><td><code>filenameEncoding</code></td><td><code>"cp437" | charset label | TextDecoder-like</code></td><td><code>"utf-8"</code></td><td>Fallback decoder for legacy (non-UTF-8-flagged) names.</td></tr>
+            <tr><td><code>maxArchiveSize</code></td><td><code>number</code></td><td>—</td><td>Maximum input archive byte length. Exceeding it throws <code>RangeError</code>.</td></tr>
+            <tr><td><code>maxEntrySize</code></td><td><code>number</code></td><td>—</td><td>Maximum decompressed size per entry, enforced during inflate. Exceeding it throws <code>RangeError</code>.</td></tr>
+            <tr><td><code>signal</code></td><td><code>AbortSignal</code></td><td>—</td><td>Cancellation between structure steps.</td></tr>
+            <tr><td><code>onProgress</code></td><td><code>(p: ZipProgress) =&gt; void</code></td><td>—</td><td>Coarse progress callback.</td></tr>
+          </tbody>
+        </table>
+
+        <details class="acc">
+          <summary><code>filenameEncoding</code> — decoding legacy filenames</summary>
+          <div class="acc-body">
+            <p>
+              JSZipp follows ZIP metadata first: if a valid Info-ZIP Unicode Path extra field
+              (<code>0x7075</code>) is present and its embedded CRC-32 matches the header name bytes,
+              its UTF-8 name is used; otherwise, if the ZIP UTF-8 flag is set, names decode as UTF-8.
+              <code>filenameEncoding</code> only applies when the UTF-8 flag is absent, and the default
+              fallback is <code>"utf-8"</code>. It affects entry paths, entry comments, and the archive
+              comment — never file contents.
+            </p>
+            <p>It accepts <code>"cp437"</code>, any charset label the runtime's <code>TextDecoder</code> supports, or a custom <code>TextDecoder</code>-shaped object:</p>
+            <pre><code>// A built-in label:
+const a = await openZip(file, { filenameEncoding: "shift_jis" });
+
+// A custom decoder-shaped object:
+const b = await openZip(file, {
+  filenameEncoding: {
+    encoding: "cp866",
+    fatal: false,
+    ignoreBOM: true,
+    decode: (bytes) =&gt; iconv.decode(bytes, "cp866")
+  }
+});</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary><code>maxArchiveSize</code> / <code>maxEntrySize</code> — zip-bomb caps</summary>
+          <div class="acc-body">
+            <p>
+              These caps are for untrusted input. <code>maxArchiveSize</code> bounds the input byte
+              length. <code>maxEntrySize</code> bounds each entry's decompressed size and is enforced
+              <em>during</em> inflate (bounded reading), so a header that misreports its uncompressed
+              size cannot expand past the cap. Breaching either throws a <code>RangeError</code>.
+            </p>
+            <pre><code>try {
+  const zip = await openZip(untrusted, {
+    maxArchiveSize: 20 * 1024 * 1024,
+    maxEntrySize: 5 * 1024 * 1024
+  });
+} catch (err) {
+  if (err instanceof RangeError) {
+    // archive or an entry exceeded the configured limit
+  }
+}</code></pre>
+          </div>
+        </details>
+
+        <details class="acc">
+          <summary>Integrity &amp; tamper checks <span class="tag">strict by default</span></summary>
+          <div class="acc-body">
+            <p>
+              <code>openZip</code> requires the Central Directory to be internally consistent: the
+              number of records must equal the EOCD (or ZIP64 EOCD) entry count and must consume
+              exactly the declared directory size, or parsing throws. The EOCD is chosen by content,
+              so an EOCD-like sequence hidden in the archive comment, or a fake EOCD appended after a
+              complete archive, cannot mask the real entries.
+            </p>
+            <p>
+              Each entry is also cross-checked against its local file header. A local/central filename
+              mismatch, a disagreement in the security-relevant flag bits (encryption, data
+              descriptor), and two central entries reusing the same local-header offset all throw.
+              These checks do not affect archives whose local and central metadata agree.
+            </p>
+            <p>
+              Duplicate paths are preserved in append order; the default reader does not reject them.
+              Encrypted entries and unsupported compression methods throw <code>NotSupportedError</code>.
+            </p>
+          </div>
+        </details>
+
+        <h3 id="reader"><code>ZipRandomAccessReader</code></h3>
+        <p>The object <code>openZip</code> resolves to.</p>
+        <table>
+          <thead><tr><th>Member</th><th>Type / Signature</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>entries</code></td><td><code>readonly ZipRandomAccessEntry[]</code></td><td>All entries in archive (append) order, duplicates preserved.</td></tr>
+            <tr><td><code>comment</code></td><td><code>string | undefined</code></td><td>The archive-level EOCD comment, when present.</td></tr>
+            <tr><td><code>get</code></td><td><code>(path: string) =&gt; ZipRandomAccessEntry | undefined</code></td><td>The most recently appended matching entry; also tries the writer-style normalized form of the path.</td></tr>
+            <tr><td><code>close</code></td><td><code>() =&gt; Promise&lt;void&gt;</code></td><td>Marks the reader closed and clears lookup state; later payload access throws <code>InvalidStateError</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="readzipstream"><code>readZipStream(stream, options?)</code></h2>
+        <p>
+          An async iterator over archive entries in order. It accepts the same
+          <a href="#readoptions"><code>ZipReadOptions</code></a> as <code>openZip</code>. Each yielded
+          entry's payload methods are <strong>single-use</strong>: read it, or call <code>skip()</code>,
+          before moving on.
+        </p>
+        <div class="api-meta">
+          <span class="pill returns">Returns <b>AsyncIterable&lt;ZipStreamEntry&gt;</b></span>
+          <span class="pill">Since <b>v0.1.0</b></span>
+        </div>
+        <pre><code>const response = await fetch("/archives/content.zip");
+
+for await (const entry of readZipStream(response.body, { maxEntrySize: 5 * 1024 * 1024 })) {
+  if (entry.isDirectory) continue;
+
+  if (entry.path.endsWith(".txt")) {
+    console.log(entry.path, await entry.text());
+  } else {
+    await entry.skip(); // consume the payload you do not need
+  }
+}</code></pre>
+        <div class="callout"><strong>Note:</strong> the current implementation collects the source stream and parses the Central Directory before iterating, to avoid ambiguous local-header parsing while the lower-level streaming decoder is hardened. The iterator contract is forward-only.</div>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="input-entry"><code>ZipInputEntry</code></h2>
+        <p>The object passed to <code>ZipWriter.add()</code> and written to a <code>ZipTransformStream</code>.</p>
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td><code>string</code></td><td>Entry name. Normalized, then checked against <code>pathMode</code>.</td></tr>
+            <tr><td><code>data</code></td><td><code>string | Uint8Array | ArrayBuffer | Blob | ReadableStream&lt;Uint8Array&gt;</code></td><td>Entry contents. Strings are encoded as UTF-8.</td></tr>
+            <tr><td><code>method</code></td><td><code>"store" | "deflate"</code></td><td>Optional per-entry compression method override.</td></tr>
+            <tr><td><code>level</code></td><td><code>number</code></td><td>Optional per-entry DEFLATE level (0–9), overriding the writer's.</td></tr>
+            <tr><td><code>meta</code></td><td><code>ZipEntryMeta</code></td><td>Optional comment, timestamp, and attribute metadata.</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <code>ZipSyncInputEntry</code> (used by <code>writeSync()</code>) is identical except that
+          <code>data</code> is limited to <code>string | Uint8Array | ArrayBuffer</code> — the values
+          that can be read without awaiting.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2 class="sig" id="entry-meta"><code>ZipEntryMeta</code></h2>
+        <p>Optional metadata supplied on write and exposed on read.</p>
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>comment</code></td><td><code>string</code></td><td>Per-entry comment (informational; does not affect extraction).</td></tr>
+            <tr><td><code>modifiedAt</code></td><td><code>Date</code></td><td>Modification time.</td></tr>
+            <tr><td><code>createdAt</code></td><td><code>Date</code></td><td>Creation time.</td></tr>
+            <tr><td><code>lastAccess</code></td><td><code>Date</code></td><td>Last-access time.</td></tr>
+            <tr><td><code>extraField</code></td><td><code>Uint8Array</code></td><td>Advanced, unchecked extra-field override.</td></tr>
+            <tr><td><code>unixPermissions</code></td><td><code>number</code></td><td>Unix store permission bits.</td></tr>
+            <tr><td><code>dosAttributes</code></td><td><code>number</code></td><td>MS-DOS attribute byte.</td></tr>
+            <tr><td><code>externalAttributes</code></td><td><code>number</code></td><td>Escape-hatch external attributes override.</td></tr>
+          </tbody>
+        </table>
+        <details class="acc">
+          <summary><code>modifiedAt</code>, <code>createdAt</code>, <code>lastAccess</code> — timestamp validation</summary>
+          <div class="acc-body">
+            <p>
+              <code>modifiedAt</code>, <code>createdAt</code>, and <code>lastAccess</code> must be
+              valid <code>Date</code> values on or after the Unix epoch. <code>modifiedAt</code>
+              defaults to write time when omitted.
+            </p>
+            <p>
+              When <code>createdAt</code> is supplied, neither <code>modifiedAt</code> nor
+              <code>lastAccess</code> may be earlier than it; an inconsistent entry throws
+              <code>RangeError</code>. When <code>timestamps</code> includes
+              <code>TimestampMode.Ntfs</code>, omitted <code>createdAt</code> and
+              <code>lastAccess</code> values each default to <code>modifiedAt</code>.
+            </p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary><code>unixPermissions</code> &amp; <code>dosAttributes</code> — permission metadata</summary>
+          <div class="acc-body">
+            <p>
+              To set permissions, prefer <code>unixPermissions</code> over
+              <code>externalAttributes</code>. Use three octal digits <code>0o000</code>&ndash;<code>0o777</code>
+              (e.g. <code>0o644</code> or <code>0o755</code>); file-type bits are added automatically.
+              Out-of-range or non-integer values are rejected.
+            </p>
+            <p>
+              <code>unixPermissions</code> is accepted only when the <code>timestamps</code> mode
+              includes <code>TimestampMode.Unix</code> (the default does); setting it without that
+              flag throws <code>RangeError</code>. When an entry records a Unix store permission
+              &mdash; via <code>unixPermissions</code>, a written Unix Extended Timestamp, or raw
+              <code>externalAttributes</code> bits &mdash; its Central Directory header advertises
+              the Unix host OS (3) in "version made by" so external tools apply those permissions;
+              otherwise the DOS host (0) is used.
+            </p>
+            <p>
+              <code>dosAttributes</code> is the DOS-attribute counterpart: the MS-DOS attribute byte
+              (<code>0x00</code>&ndash;<code>0xff</code>) written into the low 8 bits of the external
+              attributes. The directory bit <code>0x10</code> encodes the file/folder distinction
+              and must match the entry kind; a mismatch throws <code>RangeError</code>.
+            </p>
+            <p>
+              DOS attributes suit a DOS or NTFS host but would confuse Unix tools, so they are
+              accepted for the <code>Dos</code>, <code>Dos | Ntfs</code>, and
+              <code>Dos | Unix | Ntfs</code> modes and rejected when the Unix flag is set without
+              the NTFS flag (<code>Dos | Unix</code>). With both <code>Unix</code> and
+              <code>Ntfs</code> set, the external attributes carry the Unix mode (high 16 bits) and
+              the DOS attributes (low byte) together. <code>dosAttributes</code> does not affect
+              "version made by".
+            </p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary><code>extraField</code> &amp; <code>externalAttributes</code> — unchecked overrides</summary>
+          <div class="acc-body">
+            <p>
+              <strong>Caution:</strong> <code>extraField</code> and
+              <code>externalAttributes</code> are unchecked manual overrides. JSZipp writes them as
+              supplied and cannot detect every conflict with the entry kind or with the metadata it
+              generates, so an inconsistent value can corrupt the archive.
+            </p>
+            <p>
+              <code>extraField</code> must contain raw, well-formed ZIP extra-field bytes
+              (<code>id(2)+size(2)+payload</code> records). JSZipp writes those raw records before
+              its own generated extras such as ZIP64, Extended Timestamp, and NTFS. It will not add a
+              generated timestamp extra whose id already appears in the supplied bytes, so callers
+              are responsible for emitting well-formed, non-conflicting records.
+            </p>
+            <p>
+              <code>externalAttributes</code> writes raw 32-bit external attributes verbatim
+              (high 16 bits = Unix mode, low 8 bits = DOS attribute flags). It overrides
+              <code>unixPermissions</code> and <code>dosAttributes</code> and is not reconciled with
+              the entry's directory bit. Use it only to round-trip an exact value read from another
+              archive.
+            </p>
+            <p>
+              On read, JSZipp exposes only the raw <code>externalAttributes</code>; derive the Unix
+              mode with <code>externalAttributes &gt;&gt;&gt; 16</code> and the MS-DOS attribute byte
+              with <code>externalAttributes &amp; 0xff</code>.
+            </p>
+          </div>
+        </details>
+
+        <!-- ============================================================ -->
+        <h2 id="reader-entry">Reader entries</h2>
+        <p>
+          Reading yields entries with metadata plus four payload helpers:
+          <code>stream()</code>, <code>text()</code>, <code>bytes()</code>, and
+          <code>arrayBuffer()</code>. Both entry types extend
+          <a href="#entry-meta"><code>ZipEntryMeta</code></a>.
+        </p>
+
+        <h3 id="random-entry"><code>ZipRandomAccessEntry</code> (from <code>openZip</code>)</h3>
+        <p>Payload helpers are <strong>reusable</strong> — read the same entry as many times as you like until the reader is closed.</p>
+        <table>
+          <thead><tr><th>Member</th><th>Type / Signature</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td><code>string</code></td><td>Decoded entry name.</td></tr>
+            <tr><td><code>size</code></td><td><code>number</code></td><td>Uncompressed size in bytes.</td></tr>
+            <tr><td><code>compressedSize</code></td><td><code>number</code></td><td>Stored (compressed) size in bytes.</td></tr>
+            <tr><td><code>crc32</code></td><td><code>number</code></td><td>CRC-32 of the uncompressed data.</td></tr>
+            <tr><td><code>isDirectory</code></td><td><code>boolean</code></td><td>Whether the entry is a directory.</td></tr>
+            <tr><td><code>stream</code></td><td><code>() =&gt; ReadableStream&lt;Uint8Array&gt;</code></td><td>A fresh byte stream of the decompressed contents.</td></tr>
+            <tr><td><code>text</code></td><td><code>() =&gt; Promise&lt;string&gt;</code></td><td>Decode the contents as UTF-8 text.</td></tr>
+            <tr><td><code>bytes</code></td><td><code>() =&gt; Promise&lt;Uint8Array&gt;</code></td><td>The decompressed bytes.</td></tr>
+            <tr><td><code>arrayBuffer</code></td><td><code>() =&gt; Promise&lt;ArrayBuffer&gt;</code></td><td>The decompressed bytes as an <code>ArrayBuffer</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="stream-entry"><code>ZipStreamEntry</code> (from <code>readZipStream</code>)</h3>
+        <p>
+          The same shape, with two differences: <code>size</code>, <code>compressedSize</code>, and
+          <code>crc32</code> may be <code>null</code> when unknown up front, and the payload helpers are
+          <strong>single-use</strong>. After any of <code>stream()</code>, <code>text()</code>,
+          <code>bytes()</code>, <code>arrayBuffer()</code>, or <code>skip()</code> is called, calling
+          another throws <code>InvalidStateError</code>.
+        </p>
+        <table>
+          <thead><tr><th>Member</th><th>Type / Signature</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>size</code></td><td><code>number | null</code></td><td>Uncompressed size, when known.</td></tr>
+            <tr><td><code>compressedSize</code></td><td><code>number | null</code></td><td>Compressed size, when known.</td></tr>
+            <tr><td><code>crc32</code></td><td><code>number | null</code></td><td>CRC-32, when known.</td></tr>
+            <tr><td><code>isDirectory</code></td><td><code>boolean</code></td><td>Whether the entry is a directory.</td></tr>
+            <tr><td><code>skip</code></td><td><code>() =&gt; Promise&lt;void&gt;</code></td><td>Discard this entry's payload so iteration can advance.</td></tr>
+            <tr><td colspan="2"><code>stream() · text() · bytes() · arrayBuffer()</code></td><td>As above, but each entry's payload may be read only once.</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ============================================================ -->
+        <h2 id="pathmode">Path modes</h2>
+        <p>
+          <code>pathMode</code> governs how unsafe entry names are handled. It runs on both the writer
+          (after path normalization) and the reader. The defaults differ on purpose: writing defaults
+          to <code>"unsafe"</code> to preserve legacy behavior, while reading defaults to
+          <code>"strict"</code> so that untrusted archives are safe out of the box.
+        </p>
+        <table>
+          <thead><tr><th>Mode</th><th>Behavior</th></tr></thead>
+          <tbody>
+            <tr><td><code>"strict"</code></td><td>Reject unsafe paths with <code>SecurityError</code>.</td></tr>
+            <tr><td><code>"sanitize"</code></td><td>Strip the unsafe components instead of rejecting; a path that sanitizes to empty is rejected.</td></tr>
+            <tr><td><code>"unsafe"</code></td><td>Opt out of path rejection. The writer still applies normalization; the reader exposes raw archive names.</td></tr>
+            <tr><td><code>"strict-package"</code></td><td><code>"strict"</code> plus package-level checks.</td></tr>
+          </tbody>
+        </table>
+        <details class="acc">
+          <summary><code>"strict"</code> / <code>"sanitize"</code> — unsafe path handling</summary>
+          <div class="acc-body">
+            <p>
+              Unsafe paths include <code>..</code> segments, absolute paths, drive-letter paths
+              (including drive-relative names like <code>C:name</code>), backslash-separated paths
+              on read, and any path containing a NUL byte.
+            </p>
+            <p>
+              <code>"strict"</code> rejects these paths with <code>SecurityError</code>.
+              <code>"sanitize"</code> strips unsafe components instead, but rejects the path if the
+              result is empty.
+            </p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary>What <code>"strict-package"</code> adds <span class="tag">uploads · packages · CI</span></summary>
+          <div class="acc-body">
+            <p>This is an opt-in profile for archives crossing a trust boundary. Beyond strict per-path safety, it adds two cross-entry checks the default deliberately omits to preserve documented behavior:</p>
+            <ul>
+              <li><strong>Local/central size cross-check.</strong> With general-purpose bit 3 clear, the local and central sizes must agree. Data-descriptor entries (bit 3 set) are exempt.</li>
+              <li><strong>Collision rejection.</strong> Entry paths that collide after Unicode (NFC) and case normalization are rejected — exact duplicates, case-only twins like <code>Readme.txt</code> / <code>README.TXT</code>, and NFC/NFD twins.</li>
+            </ul>
+            <p>The default reader still preserves duplicate paths and defers size integrity to read time; only <code>"strict-package"</code> rejects them.</p>
+          </div>
+        </details>
+
+        <!-- ============================================================ -->
+        <h2 id="progress">Progress &amp; cancellation</h2>
+        <p>
+          All four entry points accept a <code>signal</code> (<code>AbortSignal</code>) and a coarse
+          <code>onProgress</code> callback. Cancellation is checked between stream reads and ZIP
+          structure steps, not inside synchronous DEFLATE work, so it is best-effort rather than
+          instantaneous.
+        </p>
+        <h3 id="zipprogress"><code>ZipProgress</code></h3>
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>phase</code></td><td><code>"read" | "compress" | "write" | "parse"</code></td><td>Which stage produced the update.</td></tr>
+            <tr><td><code>loaded</code></td><td><code>number</code></td><td>Bytes processed so far in this phase.</td></tr>
+            <tr><td><code>total</code></td><td><code>number | undefined</code></td><td>Expected total, when known.</td></tr>
+            <tr><td><code>entries</code></td><td><code>number | undefined</code></td><td>Entries processed so far, when applicable.</td></tr>
+            <tr><td><code>path</code></td><td><code>string | undefined</code></td><td>The entry path being processed, when applicable.</td></tr>
+          </tbody>
+        </table>
+        <pre><code>const controller = new AbortController();
+const writer = new ZipWriter({
+  signal: controller.signal,
+  onProgress: ({ phase, loaded, total }) =&gt; {
+    if (total) console.log(`${phase}: ${Math.round((loaded / total) * 100)}%`);
+  }
+});
+// controller.abort() rejects the in-flight add()/close() with an AbortError.</code></pre>
+
+        <!-- ============================================================ -->
+        <h2 id="errors">Errors &amp; diagnostics</h2>
+        <p>
+          JSZipp keeps the <em>category</em> of an exception stable across builds, even though the
+          human-readable message differs between development and production. Branch on the exception
+          type and the <code>DOMException</code> <code>name</code> — never on exact message text.
+        </p>
+        <table>
+          <thead><tr><th>Condition</th><th>Throws</th></tr></thead>
+          <tbody>
+            <tr><td>Unsafe or duplicate entry path</td><td><code>DOMException</code> name <code>"SecurityError"</code></td></tr>
+            <tr><td>Encrypted entry or unsupported compression method</td><td><code>DOMException</code> name <code>"NotSupportedError"</code></td></tr>
+            <tr><td>Runtime missing <code>deflate-raw</code> support</td><td><code>DOMException</code> name <code>"NotSupportedError"</code></td></tr>
+            <tr><td>Re-using a closed writer/reader, or mixing writer modes, or re-reading a single-use stream entry</td><td><code>DOMException</code> name <code>"InvalidStateError"</code></td></tr>
+            <tr><td><code>maxArchiveSize</code> / <code>maxEntrySize</code> breach, ZIP64 disabled but required, or a 64-bit value beyond safe-integer range</td><td><code>RangeError</code></td></tr>
+            <tr><td>Invalid <code>level</code> (not an integer 0–9)</td><td><code>RangeError</code></td></tr>
+            <tr><td>Corrupt structure, inconsistent Central Directory, or inflated-size mismatch</td><td><code>Error</code> (corrupt-stream / structure error)</td></tr>
+          </tbody>
+        </table>
+        <p>
+          In production builds, <code>error.message</code> is shortened to stable codes such as
+          <code>E_PATH</code>, <code>E_LIMIT</code>, <code>E_STRUCTURE</code>, <code>E_ZIP64</code>,
+          and <code>E_UNSUPPORTED</code> to keep the bundle small. Development builds keep the detailed
+          messages used by the tests. Because the message text is build-dependent, robust handling
+          looks at the type and name:
+        </p>
+        <pre><code>try {
+  const zip = await openZip(file, { maxEntrySize: 5 * 1024 * 1024 });
+} catch (err) {
+  if (err instanceof DOMException &amp;&amp; err.name === "SecurityError") {
+    // unsafe path under the active pathMode
+  } else if (err instanceof DOMException &amp;&amp; err.name === "NotSupportedError") {
+    // encrypted or unsupported method
+  } else if (err instanceof RangeError) {
+    // exceeded a configured limit
+  } else {
+    // corrupt or invalid archive
+  }
+}</code></pre>
+
+        <!-- ============================================================ -->
+        <h2 id="namespace">Default namespace</h2>
+        <p>
+          The default export is a <code>JSZipp</code> object bundling the runtime API values, for
+          callers who prefer a single namespace over named imports.
+        </p>
+        <pre><code>import JSZipp from "jszipp";
+
+JSZipp.ZipWriter;          // class
+JSZipp.ZipTransformStream; // class
+JSZipp.openZip;            // function
+JSZipp.readZipStream;      // function
+JSZipp.TimestampMode;      // timestamp bit flags</code></pre>
+        <p>
+          <code>ZipSyncInputEntry</code> is exported as a named type for the synchronous writer path
+          but is not part of the default namespace object because TypeScript types do not exist at
+          runtime.
+        </p>
+
+        <div class="callout"><strong>See also:</strong> <a href="examples.html">How to / examples</a> for end-to-end recipes, and <a href="performance.html">Performances / limitations</a> for memory and streaming boundaries.</div>
+      </main>
+    </div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

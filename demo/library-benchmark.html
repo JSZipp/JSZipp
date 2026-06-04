@@ -1,0 +1,2646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIP Library Benchmark</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #0ea5e9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --bg-dark: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --border: #475569;
+        }
+
+        body {
+            font-family: "Segoe UI", "Roboto Mono", monospace;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #1a2a3a 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin: 24px 0 32px;
+            animation: slideDown 0.6s ease-out;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--primary), #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95em;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 32px;
+            margin-bottom: 30px;
+            animation: fadeIn 0.8s ease-out 0.2s both;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .config-section {
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .config-title,
+        .library-header {
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 14px;
+            font-weight: 700;
+        }
+
+        .config-inputs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 15px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-secondary);
+            font-size: 0.82em;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .help-tip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(14, 165, 233, 0.14);
+            color: var(--primary);
+            border: 1px solid rgba(14, 165, 233, 0.3);
+            font-size: 0.78em;
+            line-height: 1;
+            cursor: help;
+        }
+
+        .help-tip:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
+        input[type="number"] {
+            padding: 10px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: "Courier New", monospace;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .summary-item {
+            background: var(--bg-card);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid var(--primary);
+        }
+
+        .summary-label {
+            color: var(--text-secondary);
+            font-size: 0.82em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 5px;
+        }
+
+        .summary-value {
+            font-size: 1.25em;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: "Courier New", monospace;
+        }
+
+        .benchmark-note {
+            margin: -8px 0 24px;
+            padding: 14px 16px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-left: 3px solid var(--warning);
+            border-radius: 8px;
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--text-secondary);
+            font-size: 0.88em;
+            line-height: 1.55;
+        }
+
+        .benchmark-note strong {
+            color: var(--text-primary);
+        }
+
+        .benchmark-note code {
+            color: var(--warning);
+            font-family: "Courier New", monospace;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 28px;
+            font-size: 1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #0284c7);
+            color: white;
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(14, 165, 233, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--border);
+            transform: translateY(-2px);
+        }
+
+        .benchmark-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .benchmark-row,
+        .benchmark-head {
+            display: grid;
+            grid-template-columns: minmax(200px, 1.8fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(115px, 0.85fr) minmax(95px, 0.75fr);
+            gap: 14px;
+            align-items: center;
+        }
+
+        .benchmark-row > *,
+        .benchmark-head > * {
+            min-width: 0;
+        }
+
+        .benchmark-head {
+            color: var(--text-secondary);
+            font-size: 0.78em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0 14px;
+        }
+
+        .benchmark-row {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .library-name {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .library-title {
+            font-size: 1.05em;
+            font-weight: 700;
+        }
+
+        .library-method {
+            color: var(--text-secondary);
+            font-size: 0.82em;
+            overflow-wrap: anywhere;
+        }
+
+        .library-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .metadata-chip {
+            display: inline-flex;
+            width: fit-content;
+            max-width: 100%;
+            padding: 3px 7px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+            color: var(--text-secondary);
+            border: 1px solid rgba(203, 213, 225, 0.18);
+            font-family: "Courier New", monospace;
+            font-size: 0.72em;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
+        .metadata-chip.active {
+            color: var(--primary);
+            border-color: rgba(14, 165, 233, 0.35);
+            background: rgba(14, 165, 233, 0.12);
+        }
+
+        .metadata-chip.done {
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.32);
+            background: rgba(16, 185, 129, 0.12);
+        }
+
+        .metadata-chip.mixed {
+            color: var(--warning);
+            border-color: rgba(245, 158, 11, 0.34);
+            background: rgba(245, 158, 11, 0.12);
+        }
+
+        .metadata-chip.unsupported {
+            color: var(--error);
+            border-color: rgba(239, 68, 68, 0.32);
+            background: rgba(239, 68, 68, 0.12);
+        }
+
+        .phase {
+            min-width: 0;
+        }
+
+        .phase-label {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 0.78em;
+            margin-bottom: 8px;
+        }
+
+        .phase-label span:first-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-dark);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--success));
+            border-radius: 4px;
+            transition: width 0.2s ease;
+        }
+
+        .metric {
+            font-family: "Courier New", monospace;
+            font-size: 0.95em;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .metric small {
+            display: block;
+            color: var(--text-secondary);
+            font-family: "Segoe UI", sans-serif;
+            font-size: 0.75em;
+            line-height: 1.2;
+        }
+
+        .result-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .download-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: fit-content;
+            max-width: 100%;
+            padding: 6px 9px;
+            border-radius: 6px;
+            background: rgba(16, 185, 129, 0.14);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.32);
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-decoration: none;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .download-link:hover {
+            background: rgba(16, 185, 129, 0.22);
+        }
+
+        .download-link[hidden] {
+            display: none;
+        }
+
+        .status {
+            min-width: 0;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            width: fit-content;
+            max-width: 100%;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(14, 165, 233, 0.12);
+            color: var(--primary);
+            border: 1px solid rgba(14, 165, 233, 0.28);
+            font-size: 0.8em;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .status-pill.done {
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.32);
+            background: rgba(16, 185, 129, 0.12);
+        }
+
+        .status-pill.error {
+            color: var(--error);
+            border-color: rgba(239, 68, 68, 0.32);
+            background: rgba(239, 68, 68, 0.12);
+        }
+
+        .status-pill.active {
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-detail {
+            display: block;
+            margin-top: 6px;
+            color: var(--text-secondary);
+            font-size: 0.75em;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+
+        .status-detail:empty {
+            display: none;
+        }
+
+        .note {
+            margin-top: 18px;
+            color: var(--text-secondary);
+            font-size: 0.86em;
+            line-height: 1.5;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* ---- Library family grouping ---- */
+        .benchmark-grid {
+            gap: 0;
+        }
+
+        .group-head {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 14px 16px;
+            margin-top: 22px;
+            border-radius: 10px 10px 0 0;
+            background: linear-gradient(135deg,
+                color-mix(in srgb, var(--accent) 16%, var(--bg-surface)),
+                var(--bg-surface));
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--accent);
+            border-bottom: none;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.25s ease;
+        }
+
+        .group-head:first-of-type {
+            margin-top: 0;
+        }
+
+        .group-head:hover {
+            background: linear-gradient(135deg,
+                color-mix(in srgb, var(--accent) 24%, var(--bg-surface)),
+                var(--bg-surface));
+        }
+
+        .group-chevron {
+            flex: none;
+            width: 18px;
+            height: 18px;
+            color: var(--accent);
+            transition: transform 0.25s ease;
+        }
+
+        .group-head[data-collapsed="true"] .group-chevron {
+            transform: rotate(-90deg);
+        }
+
+        .group-identity {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .group-title {
+            font-size: 1.2em;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: 0.01em;
+        }
+
+        .group-source {
+            font-size: 0.74em;
+            color: var(--text-secondary);
+            font-family: "Courier New", monospace;
+            opacity: 0.85;
+        }
+
+        .group-count {
+            flex: none;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.7em;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 14%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+        }
+
+        .group-summary {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            font-size: 0.74em;
+            color: var(--text-secondary);
+        }
+
+        .group-summary:empty {
+            display: none;
+        }
+
+        .group-summary .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.45);
+            border: 1px solid rgba(203, 213, 225, 0.16);
+            font-family: "Courier New", monospace;
+            white-space: nowrap;
+        }
+
+        .group-summary .pill strong {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .group-summary .pill.fast {
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.3);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .group-summary .pill.small {
+            color: var(--primary);
+            border-color: rgba(14, 165, 233, 0.3);
+            background: rgba(14, 165, 233, 0.1);
+        }
+
+        /* Variant rows belong to a family: square the top, accent the edge */
+        .benchmark-row.variant {
+            border-radius: 0;
+            border-top: none;
+            border-left: 4px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+        }
+
+        .benchmark-row.variant.last-variant {
+            border-radius: 0 0 10px 10px;
+        }
+
+        .benchmark-row.variant.is-fastest {
+            border-left-color: var(--success);
+            box-shadow: inset 3px 0 0 0 var(--success), 0 0 0 1px rgba(16, 185, 129, 0.25);
+        }
+
+        .group-head[data-collapsed="true"] {
+            border-radius: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .benchmark-row.variant.collapsed {
+            display: none;
+        }
+
+        .variant-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .variant-badge {
+            flex: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            font-size: 0.62em;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.14);
+            border: 1px solid rgba(16, 185, 129, 0.34);
+        }
+
+        .variant-badge[hidden] {
+            display: none;
+        }
+
+        @media (max-width: 920px) {
+            .benchmark-head {
+                display: none;
+            }
+
+            .group-head {
+                margin-top: 16px;
+            }
+
+            .group-summary {
+                width: 100%;
+                margin-left: 0;
+                justify-content: flex-start;
+            }
+
+            .benchmark-row {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .metric,
+            .result-cell,
+            .status {
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                align-items: center;
+            }
+
+            .result-cell::before {
+                content: "Result";
+                color: var(--text-secondary);
+                font-family: "Segoe UI", sans-serif;
+                font-size: 0.78em;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+        }
+
+        @media (max-width: 680px) {
+            body {
+                padding: 14px;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .config-inputs,
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .btn-primary,
+            .btn-secondary {
+                width: 100%;
+            }
+
+            .result-cell {
+                align-items: flex-start;
+            }
+
+            .status {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ZIP Library Benchmark</h1>
+            <p class="subtitle">Compression &amp; decompression timing &middot; grouped by library</p>
+        </header>
+
+        <main class="card">
+            <section class="config-section">
+                <div class="config-title">Benchmark Configuration</div>
+                <div class="config-inputs">
+                    <div class="input-group">
+                        <label class="input-label" for="fileCountInput">
+                            File Count
+                            <span class="help-tip" tabindex="0" title="How many files to put in each ZIP. Higher values take longer.">?</span>
+                        </label>
+                        <input type="number" id="fileCountInput" value="8400" min="100" max="500000" step="1000">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label" for="batchSizeInput">
+                            Batch Size
+                            <span class="help-tip" tabindex="0" title="Files added before the progress bar updates. Smaller values update more often.">?</span>
+                        </label>
+                        <input type="number" id="batchSizeInput" value="600" min="100" max="50000" step="100">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label" for="levelInput">
+                            Compression Level
+                            <span class="help-tip" tabindex="0" title="ZIP compression strength, from 0 fastest to 9 smallest.">?</span>
+                        </label>
+                        <input type="number" id="levelInput" value="6" min="0" max="9" step="1">
+                    </div>
+                </div>
+            </section>
+
+            <section class="summary-grid" aria-label="Benchmark summary">
+                <div class="summary-item">
+                    <div class="summary-label">ZIP Entry Limit</div>
+                    <div class="summary-value">65,535</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Test File Count</div>
+                    <div class="summary-value" id="displayFileCount">4,000</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Libraries / Configs</div>
+                    <div class="summary-value" id="displayLibraryCount">6</div>
+                </div>
+            </section>
+
+            <aside class="benchmark-note" aria-label="ZIP size interpretation note">
+                <strong>Why JSZipp may look larger:</strong>
+                JSZipp writes UTC Extended Timestamp metadata (<code>0x5455</code>) in both ZIP header locations.
+                That preserves timezone-correct modification times, but adds about
+                <code id="timestampOverheadValue">0.14 MB</code> for the current file count.
+                ZIP metadata exposes method and flags, not the Deflate compression level.
+            </aside>
+
+            <div class="controls">
+                <button class="btn-primary" id="startBtn">Run Benchmark</button>
+                <button class="btn-secondary" id="resetBtn">Reset</button>
+            </div>
+
+            <section class="benchmark-grid" id="benchmarkGrid" aria-label="ZIP benchmark rows">
+                <div class="benchmark-head">
+                    <div>Variant</div>
+                    <div>Compression</div>
+                    <div>Decompression</div>
+                    <div>Result</div>
+                    <div>Status</div>
+                </div>
+            </section>
+
+            <p class="note">
+                Compression time covers adding files and creating the ZIP.
+                Decompression time covers opening that ZIP and checking its files.
+                Each library runs in its own worker, so all rows start from one click.
+            </p>
+        </main>
+    </div>
+
+    <script>
+        const LIBRARIES = [
+            {
+                id: "jszipp",
+                name: "JSZipp",
+                method: ".write()",
+                kind: "jszipp",
+                source: "../dist/jszipp.umd.js",
+            },
+            {
+                id: "jszipp-compact",
+                name: "JSZipp",
+                method: ".write(), traditional",
+                kind: "jszipp",
+                source: "../dist/jszipp.umd.js",
+                timestamps: 1, // TimestampMode.Dos
+            },
+            {
+                id: "jszipp-full",
+                name: "JSZipp",
+                method: ".write(), comprehensive",
+                kind: "jszipp",
+                source: "../dist/jszipp.umd.js",
+                timestamps: 7, // TimestampMode.Dos | Unix | Ntfs
+            },
+            {
+                id: "jszipp-sync",
+                name: "JSZipp",
+                method: ".writeSync()",
+                kind: "jszippSync",
+                source: "../dist/jszipp.umd.js",
+            },
+            {
+                id: "jszipp-sync-compact",
+                name: "JSZipp",
+                method: ".writeSync(), traditional",
+                kind: "jszippSync",
+                source: "../dist/jszipp.umd.js",
+                timestamps: 1, // TimestampMode.Dos
+            },
+            {
+                id: "jszipp-sync-full",
+                name: "JSZipp",
+                method: ".writeSync(), comprehensive",
+                kind: "jszippSync",
+                source: "../dist/jszipp.umd.js",
+                timestamps: 7, // TimestampMode.Dos | Unix | Ntfs
+            },
+            {
+                id: "jszip",
+                name: "JSZip",
+                method: "generateAsync",
+                kind: "jszip",
+                source: "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+            },
+            {
+                id: "uzip",
+                name: "UZIP",
+                method: "encode sync",
+                kind: "uzip",
+                source: "https://cdn.jsdelivr.net/npm/uzip@0.20201231.0/UZIP.min.js",
+            },
+            {
+                id: "fflate-sync",
+                name: "fflate",
+                method: "zipSync",
+                kind: "fflateSync",
+                source: "https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js",
+            },
+            {
+                id: "fflate-async",
+                name: "fflate",
+                method: "zip async",
+                kind: "fflateAsync",
+                source: "https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js",
+            },
+            {
+                id: "fflate-stream",
+                name: "fflate",
+                method: "Zip/Unzip stream",
+                kind: "fflateStream",
+                source: "https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js",
+            },
+            {
+                id: "client-zip",
+                name: "client-zip",
+                method: "downloadZip",
+                kind: "clientZip",
+                source: "https://cdn.jsdelivr.net/npm/client-zip@2.5.0/index.js",
+                module: true,
+                skipTest: true // client-zip does not have the compression option. just store.
+            },
+            {
+                id: "conflux",
+                name: "Conflux",
+                method: "Writer stream",
+                kind: "conflux",
+                source: "https://cdn.jsdelivr.net/npm/@transcend-io/conflux@6.0.1/+esm",
+                module: true,
+                skipTest: true // conflux does not have the compression option yet. just store.
+            },
+            {
+                id: "zipjs-cs",
+                name: "zip.js",
+                method: "ZipWriter async, CompressionStream",
+                kind: "zipjs",
+                source: "https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.8.26/index.min.js",
+                module: true,
+                useCompressionStream: true,
+            },
+            {
+                id: "zipjs-no-cs",
+                name: "zip.js",
+                method: "ZipWriter async, no CompressionStream",
+                kind: "zipjs",
+                source: "https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.8.26/index.min.js",
+                module: true,
+                useCompressionStream: false,
+            }
+        ];
+
+        const LIBRARIES_USE = LIBRARIES.filter((e) => !e.skipTest);
+        const startBtn = document.getElementById("startBtn");
+        const resetBtn = document.getElementById("resetBtn");
+        const fileCountInput = document.getElementById("fileCountInput");
+        const batchSizeInput = document.getElementById("batchSizeInput");
+        const levelInput = document.getElementById("levelInput");
+        const displayFileCount = document.getElementById("displayFileCount");
+        const displayLibraryCount = document.getElementById("displayLibraryCount");
+        const timestampOverheadValue = document.getElementById("timestampOverheadValue");
+        const benchmarkGrid = document.getElementById("benchmarkGrid");
+        const rows = new Map();
+        let workers = [];
+
+        // ---- Library family grouping (visual consolidation) ----
+        // Each LIBRARIES entry belongs to a family keyed by its display name.
+        // FAMILY_META gives each family an accent color and a short source label.
+        const FAMILY_META = {
+            "JSZipp": { accent: "#0ea5e9", note: "local build" },
+            "JSZip":  { accent: "#f59e0b", note: "jsdelivr CDN" },
+            "UZIP":   { accent: "#a78bfa", note: "jsdelivr CDN" },
+            "fflate": { accent: "#34d399", note: "jsdelivr CDN" },
+            "client-zip": { accent: "#8b5cf6", note: "jsdelivr CDN" },
+            "Conflux": { accent: "#14b8a6", note: "jsdelivr CDN" },
+            "zip.js": { accent: "#fb923c", note: "jsdelivr CDN" }
+        };
+        const DEFAULT_ACCENT = "#94a3b8";
+
+        // Build ordered family groups, preserving first-seen order of LIBRARIES.
+        function buildGroups() {
+            const order = [];
+            const byName = new Map();
+            for (const library of LIBRARIES_USE) {
+                if (!byName.has(library.name)) {
+                    byName.set(library.name, []);
+                    order.push(library.name);
+                }
+                byName.get(library.name).push(library);
+            }
+            return order.map((name) => ({
+                name, members: byName.get(name)
+            }));
+        }
+
+        const GROUPS = buildGroups();
+        // groupState: name -> { head, chevron, summary, memberIds, results: Map<id,result> }
+        const groupState = new Map();
+
+        function accentFor(name) {
+            return (FAMILY_META[name] && FAMILY_META[name].accent) || DEFAULT_ACCENT;
+        }
+
+
+
+        function formatNumber(value) {
+            return Number(value).toLocaleString();
+        }
+
+        function formatTime(ms) {
+            return `${(ms / 1000).toFixed(2)}s`;
+        }
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes)) return "-";
+            return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+        }
+
+        function clampInput(input) {
+            const min = Number(input.min);
+            const max = Number(input.max);
+            const fallback = Number(input.defaultValue);
+            let value = Number.parseInt(input.value, 10);
+            if (!Number.isFinite(value)) value = fallback;
+            value = Math.max(min, Math.min(max, value));
+            input.value = value;
+            return value;
+        }
+
+        function setControlsDisabled(disabled) {
+            startBtn.disabled = disabled;
+            fileCountInput.disabled = disabled;
+            batchSizeInput.disabled = disabled;
+            levelInput.disabled = disabled;
+        }
+
+        function renderRows() {
+            for (const group of GROUPS) {
+                const accent = accentFor(group.name);
+                const meta = FAMILY_META[group.name] || {};
+                const count = group.members.length;
+                const countLabel = count === 1 ? "1 config" : `${count} configs`;
+
+                const head = document.createElement("div");
+                head.className = "group-head";
+                head.style.setProperty("--accent", accent);
+                head.dataset.family = group.name;
+                head.dataset.collapsed = "false";
+                head.setAttribute("role", "button");
+                head.setAttribute("tabindex", "0");
+                head.setAttribute("aria-expanded", "true");
+                head.innerHTML = `
+                    <svg class="group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                    <div class="group-identity">
+                        <span class="group-title">${group.name}</span>
+                        ${meta.note ? `<span class="group-source">${meta.note}</span>` : ""}
+                    </div>
+                    <span class="group-count">${countLabel}</span>
+                    <div class="group-summary" data-group-summary></div>
+                `;
+                benchmarkGrid.appendChild(head);
+
+                const summary = head.querySelector("[data-group-summary]");
+                const memberIds = group.members.map((m) => m.id);
+                groupState.set(group.name, {
+                    head,
+                    chevron: head.querySelector(".group-chevron"),
+                    summary,
+                    memberIds,
+                    results: new Map()
+                });
+
+                head.addEventListener("click", () => toggleGroup(group.name));
+                head.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleGroup(group.name);
+                    }
+                });
+
+                group.members.forEach((library, index) => {
+                    const isLast = index === group.members.length - 1;
+                    const row = document.createElement("div");
+                    row.className = `benchmark-row variant${isLast ? " last-variant" : ""}`;
+                    row.id = `row-${library.id}`;
+                    row.dataset.family = group.name;
+                    row.style.setProperty("--accent", accent);
+                    row.innerHTML = `
+                        <div class="library-name" title="${library.source}">
+                            <div class="variant-title">
+                                <span class="library-title">${library.method}</span>
+                                <span class="variant-badge" data-variant-badge hidden>&#9889; Fastest</span>
+                            </div>
+                            <div class="library-badges">
+                                <span class="metadata-chip" data-mtime-badge></span>
+                                <span class="metadata-chip" data-level-badge>Level -</span>
+                                <span class="metadata-chip" data-method-metadata>Method -</span>
+                                <span class="metadata-chip" data-flags-metadata>Flags -</span>
+                            </div>
+                        </div>
+                        <div class="phase">
+                            <div class="phase-label">
+                                <span data-compress-label>Ready</span>
+                                <span data-compress-percent>0%</span>
+                            </div>
+                            <div class="progress-bar"><div class="progress-fill" data-compress-fill></div></div>
+                        </div>
+                        <div class="phase">
+                            <div class="phase-label">
+                                <span data-decompress-label>Ready</span>
+                                <span data-decompress-percent>0%</span>
+                            </div>
+                            <div class="progress-bar"><div class="progress-fill" data-decompress-fill></div></div>
+                        </div>
+                        <div class="result-cell">
+                            <div class="metric" data-metric>
+                                -
+                                <small>Waiting</small>
+                            </div>
+                            <a class="download-link" data-download hidden href="#">Download ZIP</a>
+                        </div>
+                        <div class="status">
+                            <span class="status-pill" data-status>Ready</span>
+                            <small class="status-detail" data-status-detail></small>
+                        </div>
+                    `;
+                    benchmarkGrid.appendChild(row);
+                    rows.set(library.id, {
+                        row,
+                        family: group.name,
+                        compressFill: row.querySelector("[data-compress-fill]"),
+                        compressLabel: row.querySelector("[data-compress-label]"),
+                        compressPercent: row.querySelector("[data-compress-percent]"),
+                        decompressFill: row.querySelector("[data-decompress-fill]"),
+                        decompressLabel: row.querySelector("[data-decompress-label]"),
+                        decompressPercent: row.querySelector("[data-decompress-percent]"),
+                        mtimeBadge: row.querySelector("[data-mtime-badge]"),
+                        levelBadge: row.querySelector("[data-level-badge]"),
+                        methodMetadata: row.querySelector("[data-method-metadata]"),
+                        flagsMetadata: row.querySelector("[data-flags-metadata]"),
+                        variantBadge: row.querySelector("[data-variant-badge]"),
+                        metric: row.querySelector("[data-metric]"),
+                        download: row.querySelector("[data-download]"),
+                        downloadUrl: "",
+                        status: row.querySelector("[data-status]"),
+                        statusDetail: row.querySelector("[data-status-detail]")
+                    });
+                    setMetadataChip(rows.get(library.id).mtimeBadge, "mtime -");
+                });
+            }
+            displayLibraryCount.textContent = `${GROUPS.length} libs / ${LIBRARIES_USE.length} configs`;
+        }
+
+        function toggleGroup(name) {
+            const state = groupState.get(name);
+            if (!state) return;
+            const collapsed = state.head.dataset.collapsed === "true";
+            const next = !collapsed;
+            state.head.dataset.collapsed = String(next);
+            state.head.setAttribute("aria-expanded", String(!next));
+            for (const id of state.memberIds) {
+                const entry = rows.get(id);
+                if (entry) entry.row.classList.toggle("collapsed", next);
+            }
+        }
+
+        // Record a finished result for a family and refresh its fastest/smallest summary.
+        function recordGroupResult(libraryId, result) {
+            const entry = rows.get(libraryId);
+            if (!entry) return;
+            const state = groupState.get(entry.family);
+            if (!state) return;
+            state.results.set(libraryId, result);
+
+            let fastestId = null;
+            let smallestId = null;
+            for (const [id, res] of state.results) {
+                if (!fastestId || res.totalTime < state.results.get(fastestId).totalTime) fastestId = id;
+                if (!smallestId || res.sizeBytes < state.results.get(smallestId).sizeBytes) smallestId = id;
+            }
+
+            for (const id of state.memberIds) {
+                const member = rows.get(id);
+                if (!member) continue;
+                const isFastest = id === fastestId && state.memberIds.length > 1;
+                member.row.classList.toggle("is-fastest", isFastest);
+                member.variantBadge.hidden = !isFastest;
+            }
+
+            const parts = [];
+            const single = state.memberIds.length === 1;
+            if (single && fastestId) {
+                const r = state.results.get(fastestId);
+                parts.push(`<span class="pill"><strong>${formatTime(r.totalTime)}</strong> &middot; ${formatBytes(r.sizeBytes)}</span>`);
+            } else {
+                if (fastestId) {
+                    const r = state.results.get(fastestId);
+                    parts.push(`<span class="pill fast">&#9889; <strong>${formatTime(r.totalTime)}</strong> fastest</span>`);
+                }
+                if (smallestId) {
+                    const r = state.results.get(smallestId);
+                    parts.push(`<span class="pill small"><strong>${formatBytes(r.sizeBytes)}</strong> smallest</span>`);
+                }
+            }
+            if (state.results.size < state.memberIds.length) {
+                parts.push(`<span class="pill">${state.results.size}/${state.memberIds.length} done</span>`);
+            }
+            state.summary.innerHTML = parts.join("");
+        }
+
+        function clearGroupSummaries() {
+            for (const state of groupState.values()) {
+                state.results.clear();
+                state.summary.innerHTML = "";
+                for (const id of state.memberIds) {
+                    const member = rows.get(id);
+                    if (!member) continue;
+                    member.row.classList.remove("is-fastest");
+                    member.variantBadge.hidden = true;
+                }
+            }
+        }
+
+
+        function clearDownload(row) {
+            if (row.downloadUrl) {
+                URL.revokeObjectURL(row.downloadUrl);
+                row.downloadUrl = "";
+            }
+            row.download.hidden = true;
+            row.download.removeAttribute("download");
+            row.download.href = "#";
+        }
+
+        function setDownload(row, archive) {
+            clearDownload(row);
+            row.downloadUrl = URL.createObjectURL(new Blob([archive.bytes], { type: "application/zip" }));
+            row.download.href = row.downloadUrl;
+            row.download.download = archive.fileName;
+            row.download.hidden = false;
+            row.download.title = `Download ${archive.fileName} (${formatBytes(archive.sizeBytes)})`;
+        }
+
+        function setCompressionResult(row, archive) {
+            row.metric.innerHTML = `
+                ${formatTime(archive.compressTime)}
+                <small>${formatBytes(archive.sizeBytes)} / ${formatNumber(archive.entryCount)} files</small>
+                <small>C ${formatTime(archive.compressTime)} / D -</small>
+            `;
+        }
+
+        function updatePhase(row, phase, percent, label) {
+            const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+            const prefix = phase === "decompress" ? "decompress" : "compress";
+            row[`${prefix}Fill`].style.width = `${safePercent}%`;
+            row[`${prefix}Percent`].textContent = `${safePercent}%`;
+            row[`${prefix}Label`].textContent = label;
+        }
+        function setStatus(row, text, mode = "active", detail = "") {
+            row.status.textContent = text;
+            row.status.className = `status-pill ${mode}`.trim();
+            row.statusDetail.textContent = detail;
+        }
+
+        function setMetadataChip(chip, text, mode = "", title = "") {
+            chip.textContent = text;
+            chip.title = title || text;
+            chip.className = `metadata-chip ${mode}`.trim();
+        }
+
+        function resetRows() {
+            stopWorkers();
+            for (const row of rows.values()) {
+                updatePhase(row, "compress", 0, "Ready");
+                updatePhase(row, "decompress", 0, "Ready");
+                row.metric.innerHTML = "-<small>Waiting</small>";
+                clearDownload(row);
+                setMetadataChip(row.mtimeBadge, "mtime -");
+                setMetadataChip(row.levelBadge, "Level -");
+                setMetadataChip(row.methodMetadata, "Method -");
+                setMetadataChip(row.flagsMetadata, "Flags -");
+                setStatus(row, "Ready", "");
+            }
+            clearGroupSummaries();
+            setControlsDisabled(false);
+        }
+
+        function stopWorkers() {
+            for (const worker of workers) {
+                worker.terminate();
+            }
+            workers = [];
+        }
+
+        function validateConfig() {
+            const fileCount = clampInput(fileCountInput);
+            const batchSize = clampInput(batchSizeInput);
+            const level = clampInput(levelInput);
+            if (batchSize > fileCount) {
+                batchSizeInput.value = fileCount;
+            }
+            displayFileCount.textContent = formatNumber(fileCount);
+            timestampOverheadValue.textContent = formatBytes(fileCount * 18);
+            return {
+                fileCount,
+                batchSize: Math.min(batchSize, fileCount),
+                level
+            };
+        }
+
+        function createBenchmarkWorker() {
+            const workerSource = `(${workerMain.toString()})()`;
+            const blob = new Blob([workerSource], { type: "application/javascript" });
+            return new Worker(URL.createObjectURL(blob));
+        }
+
+        function workerMain() {
+            const encoder = new TextEncoder();
+
+            self.onmessage = async (event) => {
+                if (event.data.type !== "run") return;
+                const { library, config } = event.data;
+                try {
+                    postStatus("Loading");
+                    const moduleExports = library.module ? await import(library.source) : null;
+                    if (!library.module) importScripts(library.source);
+                    postStatus("Compressing");
+                    const result = await runLibrary(library, config, moduleExports);
+                    self.postMessage({ type: "done", result });
+                } catch (error) {
+                    self.postMessage({
+                        type: "error",
+                        message: error && error.message ? error.message : String(error)
+                    });
+                }
+            };
+
+            function postStatus(text) {
+                self.postMessage({ type: "status", text });
+            }
+
+            function postProgress(phase, percent, label) {
+                self.postMessage({ type: "progress", phase, percent, label });
+            }
+
+            function postCompressionLevel(label) {
+                self.postMessage({ type: "compression-level", label });
+            }
+
+            function postArchiveReady(library, config, compressed, compressTime) {
+                const bytes = asUint8Array(compressed);
+                self.postMessage({
+                    type: "archive-ready",
+                    archive: {
+                        fileName: `benchmark-${library.id}.zip`,
+                        sizeBytes: byteLength(bytes),
+                        entryCount: config.fileCount,
+                        compressTime,
+                        bytes
+                    }
+                });
+            }
+
+            function yieldControl() {
+                return new Promise((resolve) => setTimeout(resolve, 0));
+            }
+
+            // ===================================================================
+            // Deterministic, seedable, multi-file-type test-data generator.
+            //
+            // contentFor(index, total) and pathFor(index, total) are PURE functions
+            // of (DATA_SEED, index, total); generation and verifySamples re-derive
+            // the same bytes/paths independently, so they must never disagree.
+            //
+            // It models a realistic mixed archive: code + configs + text + images +
+            // a little media, scattered through a nested folder tree. Compressibility
+            // spans the full range, so compression LEVELS visibly diverge:
+            //   * text/code/json/yaml/html/css -> highly compressible (level gradient)
+            //   * png/jpg/gif/mp4/zip           -> near-incompressible realistic floor
+            // Every entry is a genuinely valid, openable file of its type, so a user
+            // can extract the archive and open the samples without "corrupt file"
+            // errors: png renders (random pixels), gif is a valid GIF89a, the nested
+            // zip opens in any archiver, jpg decodes to a real gradient image, and mp4
+            // is a real playable H.264 clip. The near-incompressible random bytes that
+            // make levels diverge live in spec-defined ignorable regions (a JPEG COM
+            // comment segment and an ISO-BMFF `free` box) so they never break validity.
+            // Change DATA_SEED for a different reproducible corpus.
+            // ===================================================================
+            const DATA_SEED = 0x9e3779b9;
+            const WORDS = ("the of and to in is that for it as was with be by on not he this are or " +
+                "his from at which but have an they one had word out so what time up go no " +
+                "way could people my than first water been call who oil its now find long down " +
+                "day did get come made may part over new sound take only little work know place " +
+                "year live me back give most very after thing our just name good sentence man think").split(" ");
+            const LEVELS = ["DEBUG", "INFO", "WARN", "ERROR", "TRACE"];
+            const MODULES = ["auth", "cache", "router", "worker", "db", "queue", "api", "sync"];
+            const NAMES = ["index", "main", "app", "util", "data", "config", "style", "script",
+                "model", "view", "handler", "service", "module", "test", "helper", "client"];
+            const TOP = ["src", "assets", "dist", "docs", "test", "config", "lib", "public", "data", "vendor"];
+            const MID = ["core", "utils", "models", "views", "components", "images", "styles",
+                "scripts", "fonts", "media", "build", "api", "shared", "modules"];
+
+            function mulberry32(a) {
+                return function () {
+                    a |= 0; a = (a + 0x6d2b79f5) | 0;
+                    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+                };
+            }
+            function seedFor(index) {
+                let h = (DATA_SEED ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0;
+                h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
+                h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
+                return (h ^ (h >>> 15)) >>> 0;
+            }
+            function pick(rng, arr) { return arr[(rng() * arr.length) | 0]; }
+            function intBetween(rng, lo, hi) { return lo + ((rng() * (hi - lo + 1)) | 0); }
+            function hexToken(rng, len) {
+                let s = ""; for (let i = 0; i < len; i++) s += "0123456789abcdef"[(rng() * 16) | 0];
+                return s;
+            }
+            function phrase(rng, n) {
+                let s = pick(rng, WORDS); for (let i = 1; i < n; i++) s += " " + pick(rng, WORDS);
+                return s;
+            }
+            // Shared sentence pool, built ONCE from a stable seed (not per file).
+            const POOL = (function () {
+                const r = mulberry32(0x1234567 ^ DATA_SEED), p = [];
+                for (let i = 0; i < 48; i++) { const s = phrase(r, intBetween(r, 8, 18)); p.push(s.charAt(0).toUpperCase() + s.slice(1) + "."); }
+                return p;
+            })();
+
+            // ---- realistic file-type mix (weights are parts per 1000, sum to 1000) ----
+            const FILE_TYPES = [
+                { ext: "json", w: 180, kind: "text" },
+                { ext: "js", w: 150, kind: "text" },
+                { ext: "txt", w: 120, kind: "text" },
+                { ext: "png", w: 120, kind: "png" },
+                { ext: "jpg", w: 80, kind: "jpg" },
+                { ext: "html", w: 80, kind: "text" },
+                { ext: "css", w: 70, kind: "text" },
+                { ext: "min.js", w: 60, kind: "text" },
+                { ext: "yaml", w: 50, kind: "text" },
+                { ext: "gif", w: 30, kind: "gif" },
+                { ext: "mp4", w: 30, kind: "mp4" },
+                { ext: "zip", w: 30, kind: "zip" }
+            ];
+
+            // ---- (index,total) -> type via cycle-walking Feistel permutation + quotas.
+            // Feistel is an O(1), seedable BIJECTION on [0,total). Mapping the permuted
+            // index through cumulative quota ranges yields EXACT per-type counts for ANY
+            // total, while scrambling so a folder holds a realistic mix of types.
+            function feistelRound(r, round) {
+                let h = (r ^ Math.imul(round + 1, 0x9e3779b1) ^ DATA_SEED) >>> 0;
+                h = Math.imul(h ^ (h >>> 15), 0x85ebca77) >>> 0;
+                h = Math.imul(h ^ (h >>> 13), 0xc2b2ae3d) >>> 0;
+                return (h ^ (h >>> 16)) >>> 0;
+            }
+            function permute(x, total) {
+                if (total <= 1) return 0;
+                const bits = 32 - Math.clz32(total - 1);
+                const half = (bits + 1) >> 1, mask = (1 << half) - 1;
+                let guard = 0;
+                do {
+                    let l = (x >>> half) & mask, r = x & mask;
+                    for (let i = 0; i < 4; i++) { const nl = r, nr = l ^ (feistelRound(r, i) & mask); l = nl; r = nr; }
+                    x = ((l << half) | r) >>> 0;
+                } while (x >= total && ++guard < 64);
+                return x >= total ? x % total : x;
+            }
+            let _planTotal = -1, _planCum = null;
+            function planFor(total) {
+                if (total === _planTotal) return _planCum;
+                const exact = FILE_TYPES.map((t) => (t.w / 1000) * total);
+                const counts = exact.map(Math.floor);
+                const rem = total - counts.reduce((a, b) => a + b, 0);
+                const order = exact.map((e, i) => ({ i, f: e - counts[i] })).sort((a, b) => b.f - a.f || a.i - b.i);
+                for (let k = 0; k < rem; k++) counts[order[k % counts.length].i]++;
+                const cum = [0]; for (const c of counts) cum.push(cum[cum.length - 1] + c);
+                _planTotal = total; _planCum = cum; return cum;
+            }
+            function typeOf(index, total) {
+                const cum = planFor(total);
+                const p = permute(index, total);
+                let lo = 0, hi = FILE_TYPES.length - 1;
+                while (lo < hi) { const m = (lo + hi) >> 1; if (p < cum[m + 1]) hi = m; else lo = m + 1; }
+                return FILE_TYPES[lo];
+            }
+
+            // ---- nested folder path (a coarse index bucket => ~8 files share a folder) ----
+            function pathFor(index, total) {
+                const t = typeOf(index, total);
+                const bucket = index >> 3;
+                const br = mulberry32((Math.imul(bucket, 2654435761) ^ DATA_SEED) >>> 0);
+                const depth = intBetween(br, 1, 4);
+                let dir = pick(br, TOP);
+                for (let d = 1; d < depth; d++) dir += "/" + pick(br, MID);
+                const nr = mulberry32(seedFor(index) ^ 0x55555555);
+                return dir + "/" + pick(nr, NAMES) + "_" + String(index).padStart(6, "0") + "." + t.ext;
+            }
+
+            // ---- deterministic per-entry modified time -------------------------
+            // Same rule as contentFor/pathFor: a PURE function of (DATA_SEED, index),
+            // derived from seedFor(index) via mulberry32. Each entry gets its own
+            // stable, realistic-looking date instead of the writer's new Date()
+            // fallback, so the JSZipp output is byte-identical across runs (matching
+            // the seeded corpus). The XOR constant decorrelates this stream from the
+            // path-name stream (which uses ^ 0x55555555).
+            //
+            // Constraints: 1990 <= year <= 2025, and the seconds component is ODD.
+            // We draw only odd epoch seconds: a Unix second is odd iff its
+            // seconds-of-minute field is odd (minute boundaries are even multiples
+            // of 60), so this guarantees getSeconds() is odd. The odd second is
+            // truncated by the 2-second DOS field but preserved by the 0x5455 extra,
+            // which is exactly the divergence this exercises. Bounds are the start of
+            // 1990 and the start of 2026 (exclusive), and we pick from the odd slots
+            // strictly inside that window so parity never crosses a year boundary.
+            const MTIME_BASE = (Date.UTC(1990, 0, 1) / 1000) | 0; // even epoch second
+            const MTIME_END = (Date.UTC(2026, 0, 1) / 1000) | 0;  // exclusive upper bound
+            const MTIME_ODD_SLOTS = (MTIME_END - MTIME_BASE) / 2; // count of odd seconds in range
+            function modifiedAtFor(index) {
+                const mr = mulberry32((seedFor(index) ^ DATA_SEED) >>> 0);
+                const slot = Math.floor(mr() * MTIME_ODD_SLOTS);
+                const seconds = MTIME_BASE + 1 + slot * 2; // odd: 1990-01-01T00:00:01 .. 2025-12-31T23:59:59
+                return new Date(seconds * 1000);
+            }
+
+            // ---- byte helpers ----
+            const CRC_TABLE = (function () {
+                const tb = new Uint32Array(256);
+                for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1); tb[n] = c >>> 0; }
+                return tb;
+            })();
+            function crc32(bytes, start, end) {
+                let c = 0xffffffff;
+                for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+                return (c ^ 0xffffffff) >>> 0;
+            }
+            function adler32(bytes) {
+                let a = 1, b = 0; for (let i = 0; i < bytes.length; i++) { a = (a + bytes[i]) % 65521; b = (b + a) % 65521; }
+                return ((b << 16) | a) >>> 0;
+            }
+            function fillRandom(rng, arr, start, end) { for (let i = start; i < end; i++) arr[i] = (rng() * 256) | 0; }
+            function concat(parts) {
+                let n = 0; for (const p of parts) n += p.length;
+                const out = new Uint8Array(n); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+                return out;
+            }
+            function be32(v) { return [(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]; }
+            // wrap raw bytes in a zlib stream using DEFLATE "stored" blocks (no encoder needed)
+            function zlibStore(raw) {
+                const blocks = [];
+                for (let off = 0; off < raw.length || off === 0; off += 65535) {
+                    const len = Math.min(65535, raw.length - off);
+                    const hdr = new Uint8Array(5);
+                    hdr[0] = (off + len >= raw.length) ? 1 : 0;
+                    hdr[1] = len & 0xff; hdr[2] = (len >>> 8) & 0xff; hdr[3] = (~len) & 0xff; hdr[4] = (~len >>> 8) & 0xff;
+                    blocks.push(hdr, raw.subarray(off, off + len));
+                    if (len === 0) break;
+                }
+                const body = concat(blocks);
+                const out = new Uint8Array(2 + body.length + 4);
+                out[0] = 0x78; out[1] = 0x01; out.set(body, 2);
+                const ad = adler32(raw), o = 2 + body.length;
+                out[o] = (ad >>> 24) & 0xff; out[o + 1] = (ad >>> 16) & 0xff; out[o + 2] = (ad >>> 8) & 0xff; out[o + 3] = ad & 0xff;
+                return out;
+            }
+
+            // ---- text generators (compressible) ----
+            function genText(rng, target) {
+                let out = "";
+                while (out.length < target) {
+                    const k = rng();
+                    if (k < 0.55) { out += pick(rng, POOL) + " "; if (rng() < 0.35) out += pick(rng, POOL) + " "; out += "\n"; }
+                    else if (k < 0.8) out += "[" + pick(rng, LEVELS) + "] " + pick(rng, MODULES) + " #" + intBetween(rng, 1, 9999) + ": " + pick(rng, POOL) + "\n";
+                    else out += '{"id":"' + hexToken(rng, 8) + '","n":' + intBetween(rng, 1, 99999) + '}\n';
+                }
+                return out;
+            }
+            function genJson(rng, target) {
+                const rows = [];
+                while (JSON.stringify(rows).length < target) {
+                    rows.push({ id: hexToken(rng, 12), user: intBetween(rng, 1, 99999), active: rng() < 0.5, tags: [pick(rng, WORDS), pick(rng, WORDS)], note: phrase(rng, intBetween(rng, 4, 10)) });
+                }
+                return JSON.stringify({ generated: true, count: rows.length, records: rows }, null, 2);
+            }
+            function genYaml(rng, target) {
+                let out = "version: 1\ngenerated: true\nitems:\n";
+                while (out.length < target) {
+                    out += "  - id: " + hexToken(rng, 8) + "\n    name: " + pick(rng, NAMES) + "\n    weight: " + intBetween(rng, 1, 1000) + "\n    note: " + phrase(rng, intBetween(rng, 4, 9)) + "\n";
+                }
+                return out;
+            }
+            function genHtml(rng, target) {
+                let body = "";
+                while (body.length < target) body += "    <p class=\"" + pick(rng, NAMES) + "\">" + phrase(rng, intBetween(rng, 8, 20)) + ".</p>\n";
+                const p = atob('PCFkb2N0eXBlIGh0bWw+CjxodG1sIGxhbmc9ImVuIj4KPGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjx0aXRsZT57e3RpdGxlfX08L3RpdGxlPjwvaGVhZD4KPGJvZHk+Cnt7Ym9keX19PC9ib2R5Pgo8L2h0bWw+Cg==');
+                const q = p.replace("{{title}}", pick(rng, NAMES)).replace("{{body}}", body);
+                return q;
+            }
+            function genCss(rng, target) {
+                const props = ["color", "margin", "padding", "border", "background", "font-size", "width", "height", "display", "position"];
+                let out = "";
+                while (out.length < target) {
+                    out += "." + pick(rng, NAMES) + " {\n";
+                    const n = intBetween(rng, 2, 6);
+                    for (let i = 0; i < n; i++) out += "  " + pick(rng, props) + ": " + intBetween(rng, 0, 64) + "px;\n";
+                    out += "}\n";
+                }
+                return out;
+            }
+            function genJs(rng, target, min) {
+                const nl = min ? "" : "\n", sp = min ? "" : "  ";
+                let out = min ? "" : "// generated module\n";
+                while (out.length < target) {
+                    out += "function " + pick(rng, NAMES) + intBetween(rng, 0, 99) + "(" + pick(rng, NAMES) + "){" + nl + sp + "return " + intBetween(rng, 1, 9999) + "+'" + phrase(rng, intBetween(rng, 2, 6)) + "';" + nl + "}" + (min ? ";" : "\n");
+                }
+                return out;
+            }
+
+            // ---- binary generators (correct headers; near-incompressible bodies) ----
+            function genPng(rng) {
+                const w = intBetween(rng, 8, 40), h = intBetween(rng, 8, 40);
+                const raw = new Uint8Array(h * (1 + w * 3));
+                for (let y = 0; y < h; y++) { const row = y * (1 + w * 3); raw[row] = 0; fillRandom(rng, raw, row + 1, row + 1 + w * 3); }
+                const idat = zlibStore(raw);
+                function chunk(type, data) {
+                    const body = concat([encoder.encode(type), data]);
+                    const c = crc32(body, 0, body.length);
+                    return concat([new Uint8Array(be32(data.length)), body, new Uint8Array(be32(c))]);
+                }
+                const ihdr = new Uint8Array([...be32(w), ...be32(h), 8, 2, 0, 0, 0]);
+                return concat([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", idat), chunk("IEND", new Uint8Array(0))]);
+            }
+            function genGif(rng) {
+                // canonical minimal 1x1 GIF89a; only the 2-entry color table varies.
+                return new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,
+                    (rng() * 256) | 0, (rng() * 256) | 0, (rng() * 256) | 0, (rng() * 256) | 0, (rng() * 256) | 0, (rng() * 256) | 0,
+                    0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
+            }
+            // Decode a base64 template into bytes (atob is available in workers).
+            function b64ToBytes(b64) {
+                const bin = atob(b64);
+                const out = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+                return out;
+            }
+            // Real, decodable baseline JPEG (a 48x48 gradient), split right after its
+            // APP0/JFIF segment so we can splice a COM comment between head and tail.
+            const JPEG_HEAD = b64ToBytes("/9j/4AAQSkZJRgABAQAAAQABAAA=");
+            const JPEG_TAIL = b64ToBytes("/9sAQwAGBAUGBQQGBgUGBwcGCAoQCgoJCQoUDg8MEBcUGBgXFBYWGh0lHxobIxwWFiAsICMmJykqKRkfLTAtKDAlKCko/9sAQwEHBwcKCAoTCgoTKBoWGigoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A+bbay6cVq21l04rQtrLpxWrbWXTiiMgwWN21M62sunFattZdOK0Lay6cVq21l04rojI+uwWN2M62sunFattZdOK0bay6cVqW1l04rojI+twWN2PPbay6cVq21l04rRtrLpxWpbWXTivHjI/nbBY3bUz7az6cVqW1l04rRtrLpxWrbWfTiuiMj67BY3bUzray6cVq21l04rQtrLpxWrbWXTiuiMj67BY3bU89trLpxWrbWXTitG2sunFaltZdOK8eMj+dsFjdtTOtrLpxWrbWXTitG2sunFaltZdOK6IyPrcFjdtTOtrLpxWrbWXTitG2sunFaltZdOK6IyPrsFjdtT//2Q==");
+            function genJpg(rng) {
+                // Carry the incompressible random bytes in a JPEG COM (comment) segment,
+                // which decoders are required to skip -> the image still decodes.
+                const n = intBetween(rng, 800, 4000);
+                const payload = new Uint8Array(n); fillRandom(rng, payload, 0, n);
+                const comLen = n + 2;
+                const com = new Uint8Array([0xff, 0xfe, (comLen >>> 8) & 0xff, comLen & 0xff]);
+                return concat([JPEG_HEAD, com, payload, JPEG_TAIL]);
+            }
+            // Real, playable H.264/MP4 clip (64x64). The random bytes go in a trailing
+            // ISO-BMFF `free` box, which the spec defines as ignorable -> still plays.
+            const MP4_TEMPLATE = b64ToBytes("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMybW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlx0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAHUbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABf21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAT9zdGJsAAAAt3N0c2QAAAAAAAAAAQAAAKdhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAQABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALWF2Y0MBQsAK/+EAFmdCwAraEJsBEAAAAwAQAAADAIDxImoBAARozg/IAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAFMAAABTAAAAAGHN0dHMAAAAAAAAAAQAAAAQAABAAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAQAAAABAAAAJHN0c3oAAAAAAAAAAAAAAAQAAAJ6AAAACgAAAAoAAAAKAAAAFHN0Y28AAAAAAAAAAQAAA2IAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAACoG1kYXQAAAJTBgX//0/cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2NrPTA6MDowIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTAgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTQgc2NlbmVjdXQ9MCBpbnRyYV9yZWZyZXNoPTAgcmM9Y3JmIG1idHJlZT0wIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTAAgAAAAB9liIQ6EYoAAhFxwABAMjgACDTJycnXXXXXXXXXXXXgAAAABkGaIBSgjAAAAAZBmkAVoIwAAAAGQZpgFaCM");
+            function genMp4(rng) {
+                const n = intBetween(rng, 1500, 6000);
+                const payload = new Uint8Array(n); fillRandom(rng, payload, 0, n);
+                const free = concat([new Uint8Array(be32(n + 8)), encoder.encode("free"), payload]);
+                return concat([MP4_TEMPLATE, free]);
+            }
+            function genZip(rng) {
+                const n = intBetween(rng, 400, 2500);
+                const name = encoder.encode("payload.bin");
+                const data = new Uint8Array(n); fillRandom(rng, data, 0, n);
+                const crc = crc32(data, 0, n);
+                const u16 = (v) => [v & 0xff, (v >>> 8) & 0xff];
+                const u32 = (v) => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
+                const lfh = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ...u32(crc), ...u32(n), ...u32(n), ...u16(name.length), 0, 0]);
+                const cdh = new Uint8Array([0x50, 0x4b, 0x01, 0x02, 20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ...u32(crc), ...u32(n), ...u32(n), ...u16(name.length),
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                const lfhFull = concat([lfh, name, data]);
+                const cdhFull = concat([cdh, name]);
+                const eocd = new Uint8Array([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 1, 0, 1, 0,
+                    ...u32(cdhFull.length), ...u32(lfhFull.length), 0, 0]);
+                return concat([lfhFull, cdhFull, eocd]);
+            }
+
+            function typeTarget(rng) {
+                const c = rng();
+                if (c < 0.6) return intBetween(rng, 600, 1500);
+                if (c < 0.9) return intBetween(rng, 1500, 3500);
+                return intBetween(rng, 3500, 6000);
+            }
+            // Returns the file BYTES (Uint8Array) for a given index in a run of `total`.
+            function contentFor(index, total) {
+                const t = typeOf(index, total);
+                const rng = mulberry32(seedFor(index));
+                switch (t.kind) {
+                    case "png": return genPng(rng);
+                    case "jpg": return genJpg(rng);
+                    case "gif": return genGif(rng);
+                    case "mp4": return genMp4(rng);
+                    case "zip": return genZip(rng);
+                    default: {
+                        const target = typeTarget(rng);
+                        let s;
+                        if (t.ext === "json") s = genJson(rng, target);
+                        else if (t.ext === "yaml") s = genYaml(rng, target);
+                        else if (t.ext === "html") s = genHtml(rng, target);
+                        else if (t.ext === "css") s = genCss(rng, target);
+                        else if (t.ext === "js") s = genJs(rng, target, false);
+                        else if (t.ext === "min.js") s = genJs(rng, target, true);
+                        else s = genText(rng, target);
+                        return encoder.encode(s);
+                    }
+                }
+            }
+
+            function bytesFor(index, total) {
+                return contentFor(index, total);
+            }
+
+            function bytesEqual(a, b) {
+                if (a.length !== b.length) return false;
+                for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+                return true;
+            }
+
+            function byteLength(data) {
+                return data.byteLength || data.length || 0;
+            }
+
+            function asUint8Array(data) {
+                if (data instanceof Uint8Array) return data;
+                if (data instanceof ArrayBuffer) return new Uint8Array(data);
+                if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+                throw new Error("Compressed output is not byte-addressable");
+            }
+
+            function readUInt16LE(bytes, offset) {
+                return bytes[offset] | (bytes[offset + 1] << 8);
+            }
+
+            function readUInt32LE(bytes, offset) {
+                return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+            }
+
+            function readUInt64LE(bytes, offset, label) {
+                const low = readUInt32LE(bytes, offset);
+                const high = readUInt32LE(bytes, offset + 4);
+                const value = high * 0x100000000 + low;
+                if (!Number.isSafeInteger(value)) throw new Error(`${label} exceeds JavaScript safe integer range`);
+                return value;
+            }
+
+            function formatHex16(value) {
+                return `0x${value.toString(16).padStart(4, "0")}`;
+            }
+
+            function compressionLevelLabel(library, config) {
+                if (library.kind === "uzip" || library.kind === "clientZip" || library.kind === "conflux") {
+                    return "library default";
+                }
+                return String(config.level);
+            }
+
+            function parseZipMetadata(data) {
+                const bytes = asUint8Array(data);
+                const eocd = findEndOfCentralDirectory(bytes);
+                if (eocd < 0) throw new Error("ZIP end of central directory not found");
+
+                const { centralOffset, centralSize, entryCount } = centralDirectoryBounds(bytes, eocd);
+
+                const methods = new Map();
+                const flags = new Map();
+                let offset = centralOffset;
+                const end = Math.min(bytes.length, centralOffset + centralSize);
+                let parsedEntries = 0;
+                let fileEntries = 0;
+                // Timestamp presence tracking: sample first non-directory entry only
+                // (scanning all entries for large archives would be slow; the first
+                // non-directory entry is representative because all entries are written
+                // by the same library with the same options).
+                let timestampSampled = false;
+                let detectedHasDos = false;
+                let detectedHasExt = false;
+                let detectedHasNtfs = false;
+                while (offset + 46 <= end && readUInt32LE(bytes, offset) === 0x02014b50) {
+                    const flagValue = readUInt16LE(bytes, offset + 8);
+                    const methodValue = readUInt16LE(bytes, offset + 10);
+                    const dosTime = readUInt16LE(bytes, offset + 12);
+                    const dosDate = readUInt16LE(bytes, offset + 14);
+                    const nameLength = readUInt16LE(bytes, offset + 28);
+                    const extraLength = readUInt16LE(bytes, offset + 30);
+                    const commentLength = readUInt16LE(bytes, offset + 32);
+                    const nameEnd = offset + 46 + nameLength;
+                    const isDirectory = nameLength > 0 && bytes[nameEnd - 1] === 0x2f;
+                    if (!isDirectory) {
+                        flags.set(flagValue, (flags.get(flagValue) || 0) + 1);
+                        methods.set(methodValue, (methods.get(methodValue) || 0) + 1);
+                        fileEntries++;
+                        if (!timestampSampled) {
+                            timestampSampled = true;
+                            // DOS timestamp: non-zero date field means a real time was written.
+                            detectedHasDos = dosDate !== 0 || dosTime !== 0;
+                            // Scan this entry's extra fields for timestamp sources.
+                            // Walk every record (do not break early) so we can detect the
+                            // Unix Extended Timestamp (0x5455 "UT") and the NTFS extra
+                            // field (0x000a) independently and report any combination.
+                            const extraStart = offset + 46 + nameLength;
+                            const extraEnd = extraStart + extraLength;
+                            let ep = extraStart;
+                            while (ep + 4 <= extraEnd) {
+                                const headerId = readUInt16LE(bytes, ep);
+                                const dataSize = readUInt16LE(bytes, ep + 2);
+                                const dataStart = ep + 4;
+                                if (headerId === 0x5455) { // Unix Extended Timestamp ("UT")
+                                    detectedHasExt = true;
+                                } else if (headerId === 0x000a) { // NTFS extra field
+                                    // Layout: 4-byte reserved, then tagged attributes.
+                                    // Tag 0x0001 carries mtime/atime/ctime (8 bytes each,
+                                    // 100ns ticks since 1601). Confirm a non-zero mtime so
+                                    // an empty stub is not mistaken for a real timestamp.
+                                    let np = dataStart + 4; // skip reserved
+                                    const ntfsEnd = dataStart + dataSize;
+                                    while (np + 4 <= ntfsEnd) {
+                                        const tag = readUInt16LE(bytes, np);
+                                        const tagSize = readUInt16LE(bytes, np + 2);
+                                        if (tag === 0x0001 && tagSize >= 8) {
+                                            const mtimeLo = readUInt32LE(bytes, np + 4);
+                                            const mtimeHi = readUInt32LE(bytes, np + 8);
+                                            if (mtimeLo !== 0 || mtimeHi !== 0) {
+                                                detectedHasNtfs = true;
+                                            }
+                                        }
+                                        np += 4 + tagSize;
+                                    }
+                                }
+                                ep += 4 + dataSize;
+                            }
+                        }
+                    }
+                    offset += 46 + nameLength + extraLength + commentLength;
+                    parsedEntries++;
+                }
+
+                if (!methods.size || !flags.size) throw new Error("ZIP central directory entries not found");
+                if (parsedEntries !== entryCount) throw new Error(`ZIP central directory entry count mismatch: parsed ${parsedEntries}, expected ${entryCount}`);
+                if (fileEntries <= 0) throw new Error("ZIP central directory file entries not found");
+                return {
+                    method: summarizeMethodCounts(methods),
+                    flags: summarizeFlagCounts(flags),
+                    timestamp: summarizeTimestamp(detectedHasDos, detectedHasExt, detectedHasNtfs)
+                };
+            }
+
+            function summarizeTimestamp(hasDos, hasExt, hasNtfs) {
+                // Build the badge from whichever timestamp sources are present.
+                // Sources: DOS date/time, Unix Extended Timestamp (0x5455 "UT"),
+                // and the NTFS extra field (0x000a).
+                const parts = [];
+                if (hasDos) parts.push("DOS");
+                if (hasExt) parts.push("UT");
+                if (hasNtfs) parts.push("NTFS");
+
+                if (parts.length === 0) {
+                    return {
+                        text: "mtime none",
+                        mode: "unsupported",
+                        title: "No modification time detected: DOS date/time fields are zero and no Extended Timestamp (0x5455) or NTFS (0x000a) extra field was found."
+                    };
+                }
+
+                const descriptions = {
+                    DOS: "legacy DOS date/time (2-second precision, local-time encoded)",
+                    UT: "Unix Extended Timestamp extra field (0x5455, whole-second UTC)",
+                    NTFS: "NTFS extra field (0x000a, 100-nanosecond UTC)"
+                };
+                const title = "Modification time is written to: " +
+                    parts.map((part) => descriptions[part]).join("; ") + ".";
+
+                // Color: green when a precise UTC source (UT or NTFS) is present,
+                // blue when only the lossy legacy DOS field is written.
+                const mode = (hasExt || hasNtfs) ? "done" : "active";
+
+                return {
+                    text: "mtime " + parts.join("+"),
+                    mode,
+                    title
+                };
+            }
+
+            function findEndOfCentralDirectory(bytes) {
+                const min = Math.max(0, bytes.length - 22 - 0xffff);
+                for (let i = bytes.length - 22; i >= min; i--) {
+                    if (readUInt32LE(bytes, i) === 0x06054b50) {
+                        const commentLength = readUInt16LE(bytes, i + 20);
+                        if (i + 22 + commentLength === bytes.length) return i;
+                    }
+                }
+                return -1;
+            }
+
+            function centralDirectoryBounds(bytes, eocd) {
+                let entryCount = readUInt16LE(bytes, eocd + 10);
+                let centralSize = readUInt32LE(bytes, eocd + 12);
+                let centralOffset = readUInt32LE(bytes, eocd + 16);
+                if (entryCount !== 0xffff && centralSize !== 0xffffffff && centralOffset !== 0xffffffff) {
+                    return { entryCount, centralSize, centralOffset };
+                }
+
+                const locator = eocd - 20;
+                if (locator < 0 || readUInt32LE(bytes, locator) !== 0x07064b50) {
+                    if (centralSize !== 0xffffffff && centralOffset !== 0xffffffff) {
+                        return { entryCount, centralSize, centralOffset };
+                    }
+                    throw new Error("ZIP64 end of central directory locator not found");
+                }
+                const zip64Eocd = readUInt64LE(bytes, locator + 8, "ZIP64 EOCD offset");
+                if (zip64Eocd + 56 > bytes.length || readUInt32LE(bytes, zip64Eocd) !== 0x06064b50) {
+                    throw new Error("ZIP64 end of central directory record is invalid");
+                }
+                entryCount = readUInt64LE(bytes, zip64Eocd + 32, "ZIP64 entry count");
+                centralSize = readUInt64LE(bytes, zip64Eocd + 40, "ZIP64 central directory size");
+                centralOffset = readUInt64LE(bytes, zip64Eocd + 48, "ZIP64 central directory offset");
+                return { entryCount, centralSize, centralOffset };
+            }
+
+            function methodName(value) {
+                if (value === 0) return "stored";
+                if (value === 8) return "deflate";
+                return `method ${value}`;
+            }
+
+            function flagNames(value) {
+                const names = [];
+                if ((value & 0x0001) !== 0) names.push("encrypted");
+                if ((value & 0x0008) !== 0) names.push("descriptor");
+                if ((value & 0x0800) !== 0) names.push("UTF-8");
+                return names.length ? names.join("+") : "none";
+            }
+
+            function sortedCounts(counts) {
+                return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => a.value - b.value);
+            }
+
+            function summarizeMethodCounts(counts) {
+                const values = sortedCounts(counts);
+                if (values.length === 1) {
+                    const { value, count } = values[0];
+                    return {
+                        text: `Method: ${methodName(value)}`,
+                        title: `Compression Method ${formatHex16(value)} (${count.toLocaleString()} entries)`
+                    };
+                }
+                return {
+                    text: "Method: mixed",
+                    title: values.map(({ value, count }) => `${methodName(value)} ${formatHex16(value)}: ${count.toLocaleString()} entries`).join("; "),
+                    mixed: true
+                };
+            }
+
+            function summarizeFlagCounts(counts) {
+                const values = sortedCounts(counts);
+                if (values.length === 1) {
+                    const { value, count } = values[0];
+                    return {
+                        text: `Flags: ${flagNames(value)}`,
+                        title: `General-Purpose Bit Flags ${formatHex16(value)} (${count.toLocaleString()} entries)`
+                    };
+                }
+                return {
+                    text: "Flags: mixed",
+                    title: values.map(({ value, count }) => `${flagNames(value)} ${formatHex16(value)}: ${count.toLocaleString()} entries`).join("; "),
+                    mixed: true
+                };
+            }
+
+            async function buildObject(config, phase, maxPercent) {
+                const files = {};
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        files[pathFor(j, config.fileCount)] = bytesFor(j, config.fileCount);
+                    }
+                    postProgress(phase, (end / config.fileCount) * maxPercent, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+                return files;
+            }
+
+            async function buildFflateObject(config, phase, maxPercent) {
+                const files = {};
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        files[pathFor(j, config.fileCount)] = [
+                            bytesFor(j, config.fileCount),
+                            { mtime: modifiedAtFor(j) }
+                        ];
+                    }
+                    postProgress(phase, (end / config.fileCount) * maxPercent, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+                return files;
+            }
+
+            async function verifyWithJSZip(JSZipCtor, compressed, config) {
+                postProgress("decompress", 15, "Opening");
+                const opened = await JSZipCtor.loadAsync(compressed);
+                const entryCount = Object.keys(opened.files).filter((name) => !opened.files[name].dir).length;
+                postProgress("decompress", 40, "Reading");
+                await verifySamples(config, (name) => {
+                    const entry = opened.file(name);
+                    return entry ? entry.async("uint8array") : undefined;
+                });
+                return entryCount;
+            }
+
+            async function runLibrary(library, config, moduleExports) {
+                postCompressionLevel(compressionLevelLabel(library, config));
+                if (library.kind === "jszipp") return runJSZipp(library, config);
+                if (library.kind === "jszippSync") return runJSZippSync(library, config);
+                if (library.kind === "jszip") return runJSZip(config);
+                if (library.kind === "uzip") return runUZIP(config);
+                if (library.kind === "fflateSync") return runFflateSync(config);
+                if (library.kind === "fflateAsync") return runFflateAsync(config);
+                if (library.kind === "fflateStream") return runFflateStream(config);
+                if (library.kind === "clientZip") return runClientZip(moduleExports, config);
+                if (library.kind === "conflux") return runConflux(moduleExports, config);
+                if (library.kind === "zipjs") return runZipJs(moduleExports, library, config);
+                throw new Error(`Unknown library: ${library.kind}`);
+            }
+
+            async function runJSZipp(library, config) {
+                const JSZipp = self.JSZipp || self.jszipp;
+                if (!JSZipp || !JSZipp.ZipWriter || !JSZipp.openZip) {
+                    throw new Error("JSZipp UMD bundle did not expose ZipWriter/openZip");
+                }
+
+                const compressStart = performance.now();
+                const zip = new JSZipp.ZipWriter({
+                    outputAs: "arraybuffer",
+                    zip64: "auto",
+                    level: config.level,
+                    timestamps: library.timestamps ?? 3 /* TimestampMode.Dos | Unix */
+                });
+
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        await zip.add({
+                            path: pathFor(j, config.fileCount),
+                            data: contentFor(j, config.fileCount),
+                            meta: { modifiedAt: modifiedAtFor(j) }
+                        });
+                    }
+                    postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                postProgress("compress", 95, "Finalizing");
+                const compressed = await zip.close();
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: library.id }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 15, "Opening");
+                const opened = await JSZipp.openZip(compressed);
+                const entryCount = opened.entries ? opened.entries.length : 0;
+                await verifySamples(config, (name) => {
+                    const entry = opened.get(name);
+                    return entry ? entry.bytes() : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runJSZippSync(library, config) {
+                const JSZipp = self.JSZipp || self.jszipp;
+                if (!JSZipp || !JSZipp.ZipWriter || !JSZipp.openZip) {
+                    throw new Error("JSZipp UMD bundle did not expose ZipWriter/openZip");
+                }
+
+                const compressStart = performance.now();
+                const zip = new JSZipp.ZipWriter({
+                    outputAs: "arraybuffer",
+                    zip64: "auto",
+                    level: config.level,
+                    timestamps: library.timestamps ?? 3 /* TimestampMode.Dos | Unix */
+                });
+
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        zip.writeSync({
+                            path: pathFor(j, config.fileCount),
+                            data: contentFor(j, config.fileCount),
+                            meta: { modifiedAt: modifiedAtFor(j) }
+                        });
+                    }
+                    postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                postProgress("compress", 95, "Finalizing");
+                const compressed = zip.closeSync();
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: library.id }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 15, "Opening");
+                const opened = await JSZipp.openZip(compressed);
+                const entryCount = opened.entries ? opened.entries.length : 0;
+                await verifySamples(config, (name) => {
+                    const entry = opened.get(name);
+                    return entry ? entry.bytes() : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runJSZip(config) {
+                const JSZipCtor = self.JSZip;
+                if (!JSZipCtor) throw new Error("JSZip did not load");
+
+                const compressStart = performance.now();
+                const zip = new JSZipCtor();
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        zip.file(
+                            pathFor(j, config.fileCount),
+                            contentFor(j, config.fileCount),
+                            { date: modifiedAtFor(j) }
+                        );
+                    }
+                    postProgress("compress", (end / config.fileCount) * 55, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                const compressed = await zip.generateAsync(
+                    {
+                        type: "uint8array",
+                        compression: "DEFLATE",
+                        compressionOptions: { level: config.level }
+                    },
+                    (metadata) => {
+                        postProgress("compress", 55 + metadata.percent * 0.45, "Generating");
+                    }
+                );
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "jszip" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                const entryCount = await verifyWithJSZip(JSZipCtor, compressed, config);
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runUZIP(config) {
+                const UZIPLib = self.UZIP;
+                if (!UZIPLib || !UZIPLib.encode || !UZIPLib.parse) {
+                    throw new Error("UZIP did not expose encode/parse");
+                }
+
+                const compressStart = performance.now();
+                const files = await buildObject(config, "compress", 85);
+                postProgress("compress", 92, "Encoding");
+                const compressed = UZIPLib.encode(files);
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "uzip" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 20, "Parsing");
+                const opened = UZIPLib.parse(compressed);
+                const entryCount = Object.keys(opened).length;
+                await verifySamples(config, (name) => {
+                    const bytes = opened[name];
+                    return bytes ? bytes : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runFflateSync(config) {
+                const fflateLib = self.fflate;
+                if (!fflateLib || !fflateLib.zipSync || !fflateLib.unzipSync) {
+                    throw new Error("fflate sync API did not load");
+                }
+
+                const compressStart = performance.now();
+                const files = await buildFflateObject(config, "compress", 85);
+                postProgress("compress", 92, "Encoding");
+                const compressed = fflateLib.zipSync(files, { level: config.level });
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "fflate-sync" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 20, "Inflating");
+                const opened = fflateLib.unzipSync(compressed);
+                const entryCount = Object.keys(opened).length;
+                await verifySamples(config, (name) => {
+                    const bytes = opened[name];
+                    return bytes ? bytes : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runFflateAsync(config) {
+                const fflateLib = self.fflate;
+                if (!fflateLib || !fflateLib.zip || !fflateLib.unzip) {
+                    throw new Error("fflate async API did not load");
+                }
+
+                const compressStart = performance.now();
+                const files = await buildFflateObject(config, "compress", 85);
+                postProgress("compress", 92, "Encoding");
+                const compressed = await new Promise((resolve, reject) => {
+                    fflateLib.zip(files, { level: config.level }, (error, data) => {
+                        if (error) reject(error);
+                        else resolve(data);
+                    });
+                });
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "fflate-async" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 20, "Inflating");
+                const opened = await new Promise((resolve, reject) => {
+                    fflateLib.unzip(compressed, (error, data) => {
+                        if (error) reject(error);
+                        else resolve(data);
+                    });
+                });
+                const entryCount = Object.keys(opened).length;
+                await verifySamples(config, (name) => {
+                    const bytes = opened[name];
+                    return bytes ? bytes : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runFflateStream(config) {
+                const fflateLib = self.fflate;
+                if (!fflateLib || !fflateLib.Zip || !fflateLib.ZipDeflate || !fflateLib.Unzip || !fflateLib.UnzipInflate) {
+                    throw new Error("fflate streaming ZIP API did not load");
+                }
+
+                const compressStart = performance.now();
+                const chunks = [];
+                let streamError = null;
+                const zip = new fflateLib.Zip((error, data) => {
+                    if (error) {
+                        streamError = error;
+                    } else if (data && data.length) {
+                        chunks.push(data);
+                    }
+                });
+
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        const file = new fflateLib.ZipDeflate(pathFor(j, config.fileCount), {
+                            level: config.level,
+                            mtime: modifiedAtFor(j)
+                        });
+                        zip.add(file);
+                        file.push(bytesFor(j, config.fileCount), true);
+                    }
+                    postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                postProgress("compress", 95, "Finalizing");
+                zip.end();
+                if (streamError) throw streamError;
+                const compressed = concat(chunks);
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "fflate-stream" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 20, "Streaming");
+                const sampleNames = new Set([
+                    0,
+                    Math.floor(config.fileCount / 2),
+                    config.fileCount - 1
+                ].filter((index) => index >= 0 && index < config.fileCount).map((index) => pathFor(index, config.fileCount)));
+                const opened = {};
+                let entryCount = 0;
+                const unzipper = new fflateLib.Unzip((file) => {
+                    entryCount++;
+                    if (!sampleNames.has(file.name)) return;
+                    const parts = [];
+                    file.ondata = (error, data) => {
+                        if (error) {
+                            streamError = error;
+                        } else if (data && data.length) {
+                            parts.push(data);
+                        }
+                    };
+                    file.start();
+                    opened[file.name] = parts;
+                });
+                unzipper.register(fflateLib.UnzipInflate);
+
+                const chunkSize = 1024 * 1024;
+                for (let offset = 0; offset < compressed.length; offset += chunkSize) {
+                    const end = Math.min(offset + chunkSize, compressed.length);
+                    unzipper.push(compressed.subarray(offset, end), end === compressed.length);
+                    postProgress("decompress", 20 + (end / compressed.length) * 45, `Read ${end.toLocaleString()} bytes`);
+                    await yieldControl();
+                }
+                if (compressed.length === 0) unzipper.push(compressed, true);
+                if (streamError) throw streamError;
+
+                await verifySamples(config, (name) => {
+                    const parts = opened[name];
+                    return parts ? concat(parts) : undefined;
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runClientZip(clientZipLib, config) {
+                const clientZip = clientZipLib && clientZipLib.downloadZip;
+                if (!clientZip) {
+                    throw new Error("client-zip did not expose downloadZip");
+                }
+
+                async function* buildFiles() {
+                    for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                        const end = Math.min(i + config.batchSize, config.fileCount);
+                        for (let j = i; j < end; j++) {
+                            yield {
+                                name: pathFor(j, config.fileCount),
+                                lastModified: modifiedAtFor(j),
+                                input: contentFor(j, config.fileCount)
+                            };
+                        }
+                        postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                        await yieldControl();
+                    }
+                }
+
+                const compressStart = performance.now();
+                const compressed = await clientZip(buildFiles()).arrayBuffer();
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "client-zip" }, config, compressed, compressTime);
+                postProgress("decompress", 100, "Not available");
+
+                return finishCompressionOnlyResult(config, compressed, compressTime);
+            }
+
+            async function runConflux(confluxLib, config) {
+                if (!confluxLib || !confluxLib.Writer || !confluxLib.Reader) {
+                    throw new Error("Conflux did not expose Writer / Reader");
+                }
+
+                const compressStart = performance.now();
+                const { readable, writable } = new confluxLib.Writer();
+                const compressedPromise = new Response(readable).arrayBuffer();
+                const writer = writable.getWriter();
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    for (let j = i; j < end; j++) {
+                        await writer.write({
+                            name: pathFor(j, config.fileCount),
+                            lastModified: modifiedAtFor(j),
+                            stream: () => new Response(contentFor(j, config.fileCount)).body
+                        });
+                    }
+                    postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                postProgress("compress", 95, "Finalizing");
+                await writer.close();
+                const compressed = await compressedPromise;
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: "conflux" }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 15, "Opening");
+                const entries = [];
+                for await (const entry of confluxLib.Reader(new Blob([compressed]))) {
+                    if (!entry.directory) entries.push(entry);
+                }
+                const entryMap = new Map(entries.map((entry) => [entry.name, entry]));
+                const entryCount = entryMap.size;
+                postProgress("decompress", 40, "Reading");
+                await verifySamples(config, async (name) => {
+                    const entry = entryMap.get(name);
+                    if (!entry) return undefined;
+                    return new Uint8Array(await entry.arrayBuffer());
+                });
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function runZipJs(zipLib, library, config) {
+                if (!zipLib || !zipLib.ZipWriter || !zipLib.ZipReader) {
+                    throw new Error("zip.js did not expose zip.ZipWriter / zip.ZipReader");
+                }
+                zipLib.configure({
+                    useWebWorkers: false,
+                    useCompressionStream: library.useCompressionStream ?? true
+                });
+
+                const compressStart = performance.now();
+                const zipWriter = new zipLib.ZipWriter(new zipLib.Uint8ArrayWriter(), {
+                    level: config.level
+                });
+
+                for (let i = 0; i < config.fileCount; i += config.batchSize) {
+                    const end = Math.min(i + config.batchSize, config.fileCount);
+                    const adds = [];
+                    for (let j = i; j < end; j++) {
+                        adds.push(zipWriter.add(
+                            pathFor(j, config.fileCount),
+                            new zipLib.Uint8ArrayReader(contentFor(j, config.fileCount)),
+                            { lastModDate: modifiedAtFor(j), level: config.level }
+                        ));
+                    }
+                    await Promise.all(adds);
+                    postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                    await yieldControl();
+                }
+
+                postProgress("compress", 95, "Finalizing");
+                const compressed = await zipWriter.close();
+                const compressTime = performance.now() - compressStart;
+                postProgress("compress", 100, "Compressed");
+                postArchiveReady({ id: library.id }, config, compressed, compressTime);
+
+                const decompressStart = performance.now();
+                postProgress("decompress", 15, "Opening");
+                const zipReader = new zipLib.ZipReader(new zipLib.Uint8ArrayReader(compressed));
+                const entries = await zipReader.getEntries();
+                const entryMap = new Map(entries.filter((e) => !e.directory).map((e) => [e.filename, e]));
+                const entryCount = entryMap.size;
+                postProgress("decompress", 40, "Reading");
+                await verifySamples(config, async (name) => {
+                    const entry = entryMap.get(name);
+                    if (!entry) return undefined;
+                    return entry.getData(new zipLib.Uint8ArrayWriter());
+                });
+                await zipReader.close();
+                const decompressTime = performance.now() - decompressStart;
+                postProgress("decompress", 100, "Decompressed");
+
+                return finishResult(config, compressed, entryCount, compressTime, decompressTime);
+            }
+
+            async function verifySamples(config, readText) {
+                postProgress("decompress", 75, "Verifying");
+                const indices = Array.from(new Set([
+                    0,
+                    Math.floor(config.fileCount / 2),
+                    config.fileCount - 1
+                ])).filter((index) => index >= 0 && index < config.fileCount);
+
+                for (const index of indices) {
+                    const name = pathFor(index, config.fileCount);
+                    const actual = await readText(name);
+                    const expected = contentFor(index, config.fileCount);
+                    if (!bytesEqual(actual, expected)) {
+                        throw new Error(`Content mismatch for ${name}`);
+                    }
+                }
+            }
+
+            function finishResult(config, compressed, entryCount, compressTime, decompressTime) {
+                if (entryCount !== config.fileCount) {
+                    throw new Error(`Entry count mismatch: ${entryCount.toLocaleString()} of ${config.fileCount.toLocaleString()}`);
+                }
+
+                return {
+                    compressTime,
+                    decompressTime,
+                    totalTime: compressTime + decompressTime,
+                    sizeBytes: byteLength(compressed),
+                    entryCount,
+                    zipMetadata: parseZipMetadata(compressed)
+                };
+            }
+
+            function finishCompressionOnlyResult(config, compressed, compressTime) {
+                return {
+                    compressTime,
+                    decompressTime: null,
+                    totalTime: compressTime,
+                    sizeBytes: byteLength(compressed),
+                    entryCount: config.fileCount,
+                    compressionOnly: true,
+                    zipMetadata: parseZipMetadata(compressed)
+                };
+            }
+        }
+
+        async function runBenchmark() {
+            const config = validateConfig();
+            stopWorkers();
+            setControlsDisabled(true);
+            clearGroupSummaries();
+
+            const sharedStart = performance.now();
+
+            const runs = LIBRARIES_USE.map((library) => {
+                const row = rows.get(library.id);
+                updatePhase(row, "compress", 0, "Starting");
+                updatePhase(row, "decompress", 0, "Waiting");
+                row.metric.innerHTML = "-<small>Started together</small>";
+                clearDownload(row);
+                setMetadataChip(row.mtimeBadge, "mtime -");
+                setMetadataChip(row.levelBadge, "Level -");
+                setMetadataChip(row.methodMetadata, "Method -");
+                setMetadataChip(row.flagsMetadata, "Flags -");
+                setStatus(row, "Queued", "active");
+
+                return new Promise((resolve) => {
+                    const worker = createBenchmarkWorker();
+                    workers.push(worker);
+                    worker.onmessage = (event) => {
+                        const data = event.data;
+                        if (data.type === "status") {
+                            setStatus(row, data.text, "active");
+                        } else if (data.type === "progress") {
+                            updatePhase(row, data.phase, data.percent, data.label);
+                        } else if (data.type === "compression-level") {
+                            setMetadataChip(row.levelBadge, `Level ${data.label}`, "active");
+                        } else if (data.type === "archive-ready") {
+                            setCompressionResult(row, data.archive);
+                            setDownload(row, data.archive);
+                        } else if (data.type === "done") {
+                            const result = data.result;
+                            setMetadataChip(
+                                row.methodMetadata,
+                                result.zipMetadata.method.text,
+                                result.zipMetadata.method.mixed ? "mixed" : "done",
+                                result.zipMetadata.method.title
+                            );
+                            setMetadataChip(
+                                row.flagsMetadata,
+                                result.zipMetadata.flags.text,
+                                result.zipMetadata.flags.mixed ? "mixed" : "done",
+                                result.zipMetadata.flags.title
+                            );
+                            const ts = result.zipMetadata.timestamp;
+                            setMetadataChip(row.mtimeBadge, ts.text, ts.mode, ts.title);
+                            row.metric.innerHTML = `
+                                ${formatTime(result.totalTime)}
+                                <small>${formatBytes(result.sizeBytes)} / ${formatNumber(result.entryCount)} files</small>
+                                <small>C ${formatTime(result.compressTime)} / D ${result.compressionOnly ? "n/a" : formatTime(result.decompressTime)}</small>
+                            `;
+                            setStatus(row, "Complete", "done");
+                            recordGroupResult(library.id, result);
+                            worker.terminate();
+                            resolve({ library, ok: true });
+                        } else if (data.type === "error") {
+                            setStatus(row, "Error", "error", data.message);
+                            if (row.download.hidden) {
+                                updatePhase(row, "compress", 100, "Stopped");
+                            }
+                            worker.terminate();
+                            resolve({ library, ok: false });
+                        }
+                    };
+                    worker.onerror = (error) => {
+                        setStatus(row, "Error", "error", error.message || "Worker error");
+                        if (row.download.hidden) {
+                            updatePhase(row, "compress", 100, "Stopped");
+                        }
+                        worker.terminate();
+                        resolve({ library, ok: false });
+                    };
+
+                    worker.postMessage({
+                        type: "run",
+                        library: {
+                            ...library,
+                            source: new URL(library.source, document.baseURI).href
+                        },
+                        config,
+                        sharedStart
+                    });
+                });
+            });
+
+            await Promise.all(runs);
+            workers = [];
+            setControlsDisabled(false);
+        }
+
+        fileCountInput.addEventListener("input", validateConfig);
+        batchSizeInput.addEventListener("change", validateConfig);
+        levelInput.addEventListener("change", validateConfig);
+        startBtn.addEventListener("click", runBenchmark);
+        resetBtn.addEventListener("click", resetRows);
+
+        renderRows();
+        validateConfig();
+    </script>
+</body>
+</html>

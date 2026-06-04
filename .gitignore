@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+npm-debug.log*
+/test-compression/internal/
+/dist/
+/test/internal/
+/demo/jszipp.umd.js

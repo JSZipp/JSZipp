@@ -1,0 +1,2737 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JSZipp — Main Demo</title>
+    <meta
+      name="description"
+      content="Try JSZipp's fast, compact, and defensive browser ZIP reader and writer with Web Streams, ZIP64, metadata, and unsafe-archive guards."
+    />
+    <link rel="icon" type="image/png" href="../assets/icon64.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08090c;
+        --bg-2: #0b0d11;
+        --panel: #11141a;
+        --panel-2: #161a22;
+        --raise: #1b212b;
+        --line: rgba(255, 255, 255, 0.07);
+        --line-2: rgba(255, 255, 255, 0.13);
+        --ink: #e9eef4;
+        --muted: #8b97a4;
+        --faint: #5a6573;
+        --lime: #c4ff44;
+        --lime-deep: #9fe016;
+        --lime-dim: rgba(196, 255, 68, 0.12);
+        --cyan: #4fe3dd;
+        --cyan-dim: rgba(79, 227, 221, 0.12);
+        --coral: #ff5d52;
+        --coral-dim: rgba(255, 93, 82, 0.13);
+        --amber: #ffc24b;
+        --amber-dim: rgba(255, 194, 75, 0.13);
+        --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo,
+          Consolas, monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --r: 14px;
+        --r-sm: 9px;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+
+      /* atmospheric background: blueprint grid + lime glow + grain */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        background:
+          radial-gradient(900px 600px at 78% -8%, rgba(196, 255, 68, 0.08), transparent 60%),
+          radial-gradient(800px 700px at 8% 18%, rgba(79, 227, 221, 0.06), transparent 55%),
+          linear-gradient(180deg, #090b0e, #08090c 40%, #07080a);
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        opacity: 0.5;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+        background-size: 46px 46px;
+        mask-image: radial-gradient(circle at 50% 30%, #000 30%, transparent 85%);
+      }
+
+      .grain {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        opacity: 0.04;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      button, input, select, textarea { font: inherit; color: inherit; }
+      button { border: 0; cursor: pointer; background: none; }
+      button:disabled { cursor: not-allowed; opacity: 0.4; }
+      a { color: inherit; }
+
+      .mono { font-family: var(--mono); }
+
+      /* ---------- top bar ---------- */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        height: 58px;
+        padding: 0 clamp(16px, 4vw, 40px);
+        border-bottom: 1px solid var(--line);
+        background: rgba(8, 9, 12, 0.72);
+        backdrop-filter: blur(14px);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 11px;
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 1.02rem;
+        letter-spacing: 0.02em;
+      }
+      .brand .mark {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        /*background: linear-gradient(140deg, var(--lime), var(--lime-deep));*/
+        color: #0a0c08;
+        /*box-shadow: 0 0 0 1px rgba(196, 255, 68, 0.4), 0 6px 18px rgba(196, 255, 68, 0.22);*/
+        overflow: hidden;
+      }
+      .brand .mark img { width: 100%; height: 100%; object-fit: cover; }
+      /*
+      .brand .mark::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.6) 50%, transparent 65%);
+        transform: translateX(-120%);
+        animation: sheen 4.5s ease-in-out infinite;
+      }*/
+      @keyframes sheen { 0%, 60% { transform: translateX(-120%); } 80%, 100% { transform: translateX(120%); } }
+      .brand b { color: var(--lime); }
+      .topbar .spacer { flex: 1; }
+      .topnav {
+        display: flex;
+        gap: 2px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.025);
+      }
+      .topnav a {
+        padding: 6px 11px;
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-decoration: none;
+        transition: background 0.15s, color 0.15s;
+      }
+      .topnav a:hover { color: var(--ink); background: var(--line); }
+      .caps { display: flex; gap: 10px; padding-left: 12px; border-left: 1px solid var(--line); }
+      .cap {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--faint);
+      }
+      .cap .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--coral);
+        box-shadow: 0 0 8px var(--coral);
+      }
+      .cap.ok .dot { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+
+      /* ---------- layout ---------- */
+      .wrap { max-width: 1240px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 48px); }
+
+      /* ---------- hero ---------- */
+      .hero {
+        display: block;
+        padding: clamp(36px, 5vw, 64px) 0 clamp(18px, 3vw, 28px);
+      }
+
+      .vih {
+        padding: 20px;
+      }
+      .hero-banner {
+        max-width: 30em;
+        font-family: var(--mono);
+        font-size: clamp(1.68rem, 4vw, 2.76rem);
+      }
+      .hero-brand {
+        width: fit-content;
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: clamp(1.77rem, 3.54vw, 2.50rem);
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        line-height: 180%;
+      }
+      .hero-brand span.hero-brand-color { color: var(--lime); }
+      .hero-brand .hero-brand-sub  { font-size: 72%; }
+      .hero-banner-message {
+        line-height: 160%;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--lime);
+        margin-bottom: 22px;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 26px;
+        height: 1px;
+        background: var(--lime);
+      }
+      h1 {
+        margin: 0;
+        font-family: var(--mono);
+        font-weight: 800;
+        max-width: 12.5em;
+        font-size: clamp(2.2rem, 5vw, 3.55rem);
+        line-height: 1.04;
+        letter-spacing: 0;
+      }
+      h1 .accent { color: var(--lime); }
+      .lede {
+        max-width: 34em;
+        margin: 20px 0 0;
+        color: var(--muted);
+        font-size: clamp(0.98rem, 1.4vw, 1.1rem);
+      }
+      .hero-cta { display: flex; flex-wrap: wrap; gap: 11px; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        height: 44px;
+        padding: 0 18px;
+        border-radius: 10px;
+        font-family: var(--mono);
+        font-size: 0.86rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s, border-color 0.15s;
+      }
+      .btn svg { width: 16px; height: 16px; }
+      .btn-primary {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(140deg, var(--lime), var(--lime-deep));
+        color: #0a0c08;
+        box-shadow: 0 8px 26px rgba(196, 255, 68, 0.2);
+      }
+      .btn-primary::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.45) 50%, transparent 62%);
+        transform: translateX(-120%);
+        animation: sheen 5s ease-in-out 1s infinite;
+      }
+      .btn-ghost {
+        border: 1px solid var(--line-2);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--ink);
+      }
+      .btn:hover { transform: translateY(-2px); }
+      .btn-ghost:hover { border-color: var(--lime); color: var(--lime); }
+
+      .status-rail {
+        display: grid;
+        gap: 10px;
+      }
+      .status-rail .rail-label {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .status-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .stat {
+        position: relative;
+        min-width: 0;
+        min-height: 92px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+          var(--panel);
+      }
+      .stat::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: var(--faint);
+        opacity: 0.65;
+      }
+      .stat.hot::before { background: var(--lime); box-shadow: 0 0 14px var(--lime); }
+      .stat .k {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: 0.65rem;
+        color: var(--faint);
+      }
+      .stat .k svg { width: 13px; height: 13px; color: var(--muted); flex: 0 0 auto; }
+      .stat .v {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: clamp(1rem, 1.35vw, 1.22rem);
+        line-height: 1.18;
+        margin-top: 8px;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+        transition: color 0.3s;
+      }
+      .stat-sub {
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--faint);
+      }
+      .stat .v.pulse { color: var(--lime); }
+
+      /* ---------- capability map visual ---------- */
+      .viz {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background:
+          radial-gradient(120% 120% at 80% 0%, rgba(196, 255, 68, 0.06), transparent 55%),
+          linear-gradient(160deg, var(--panel-2), var(--panel));
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        overflow: hidden;
+      }
+      .viz-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+      .viz-head .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--lime);
+      }
+      .viz-head .live .dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--lime); box-shadow: 0 0 8px var(--lime);
+        animation: blink 1.6s ease-in-out infinite;
+      }
+      @keyframes blink { 50% { opacity: 0.25; } }
+      .viz-stage {
+        position: relative;
+        padding: 14px;
+      }
+      /* ---------- anatomy of a ZIP file ---------- */
+      .anatomy {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        padding: 18px 16px 16px 52px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background:
+          radial-gradient(120% 70% at 90% 0%, rgba(196, 255, 68, 0.07), transparent 50%),
+          linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+          rgba(8, 10, 13, 0.34);
+        background-size: auto, 30px 30px, 30px 30px, auto;
+      }
+      /* byte ruler down the left edge: offset 0 at top → EOF at bottom */
+      .byte-ruler {
+        position: absolute;
+        top: 18px;
+        bottom: 44px;
+        left: 24px;
+        width: 2px;
+        border-radius: 2px;
+        background: linear-gradient(180deg,
+          rgba(79, 227, 221, 0.45),
+          rgba(196, 255, 68, 0.45));
+        opacity: 0.65;
+      }
+      .byte-ruler::before, .byte-ruler::after {
+        position: absolute;
+        left: 8px;
+        font-family: var(--mono);
+        font-size: 0.56rem;
+        letter-spacing: 0.06em;
+        color: var(--faint);
+        white-space: nowrap;
+      }
+      .byte-ruler::before { content: "offset 0"; top: -4px; }
+      .byte-ruler::after { content: "EOF"; bottom: -4px; }
+
+      /* a labelled region of the archive */
+      .zr { position: relative; }
+      .zr .node-box {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        column-gap: 12px;
+        row-gap: 9px;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid var(--line-2);
+        border-radius: 12px;
+        background: var(--raise);
+        transition: border-color 0.25s, background 0.25s, box-shadow 0.25s, transform 0.25s;
+      }
+      .node-box.hot {
+        border-color: rgba(196, 255, 68, 0.7);
+        background: rgba(196, 255, 68, 0.075);
+        box-shadow: inset 0 0 0 1px rgba(196, 255, 68, 0.13), 0 0 24px rgba(196, 255, 68, 0.08);
+        transform: translateX(2px);
+      }
+      /* tick connecting each region to the byte ruler */
+      .zr::before {
+        content: "";
+        position: absolute;
+        left: -30px;
+        top: 22px;
+        width: 28px;
+        height: 2px;
+        background: var(--line-2);
+        z-index: 0;
+      }
+      .zr::after {
+        content: "";
+        position: absolute;
+        left: -32px;
+        top: 18px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--bg-2);
+        border: 2px solid var(--line-2);
+        z-index: 1;
+        transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+      }
+      .zr:has(.node-box.hot)::after {
+        border-color: var(--lime);
+        background: rgba(196, 255, 68, 0.25);
+        box-shadow: 0 0 12px rgba(196, 255, 68, 0.5);
+      }
+      .ops-icon {
+        grid-row: 1;
+        grid-column: 1;
+        display: inline-grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: var(--bg-2);
+        color: var(--lime);
+      }
+      .ops-icon svg { width: 17px; height: 17px; }
+      .zr-main { grid-column: 2; min-width: 0; }
+      .zr h3 {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        line-height: 1.2;
+      }
+      .zr p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 0.7rem;
+        line-height: 1.4;
+      }
+      .zr .zr-count {
+        grid-column: 3;
+        justify-self: end;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: var(--lime);
+        background: rgba(196, 255, 68, 0.1);
+        border: 1px solid rgba(196, 255, 68, 0.3);
+        border-radius: 8px;
+        padding: 4px 9px;
+        white-space: nowrap;
+        transition: background 0.25s;
+      }
+      .ops-meta {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ops-meta span {
+        padding: 3px 7px;
+        border-radius: 7px;
+        background: rgba(79, 227, 221, 0.09);
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        line-height: 1.1;
+      }
+      /* repeated-entry stack hint behind the local-entries region */
+      .zr.repeat .node-box {
+        box-shadow:
+          3px -3px 0 -1px var(--raise), 3px -3px 0 0 var(--line),
+          6px -6px 0 -1px var(--raise), 6px -6px 0 0 var(--line),
+          inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+      .zr.repeat.hot-shadow .node-box { /* reserved */ }
+
+      /* the EOCD → central-directory back-reference (why readers start at the end) */
+      .eocd-link {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -2px 0 0 4px;
+        padding-left: 2px;
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        color: var(--cyan);
+      }
+      .eocd-link svg { width: 30px; height: 16px; color: var(--cyan); flex: 0 0 auto; }
+      .eocd-link b { color: var(--ink); font-weight: 600; }
+      .viz-head .vh-tag {
+        display: inline-block;
+        margin-right: 9px;
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: var(--lime-dim);
+        color: var(--lime);
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        vertical-align: middle;
+      }
+      .viz-caption {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 18px 16px;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--faint);
+      }
+      .viz-caption b { color: var(--cyan); }
+
+      /* ---------- workbench ---------- */
+      .workbench { padding-bottom: 80px; }
+      .lab-deck {
+        position: relative;
+        display: grid;
+        gap: 14px;
+        margin: 0 auto 26px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background:
+          radial-gradient(80% 120% at 6% 0%, rgba(196, 255, 68, 0.08), transparent 58%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.012)),
+          var(--panel);
+        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+      .lab-deck-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+      }
+      .lab-kicker {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--lime);
+      }
+      .lab-deck-title {
+        margin-top: 5px;
+        font-family: var(--mono);
+        font-size: clamp(1rem, 1.5vw, 1.18rem);
+        font-weight: 800;
+        line-height: 1.25;
+      }
+      .lab-deck-note {
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--faint);
+      }
+      .lab-deck .hero-cta {
+        flex: 0 0 auto;
+        justify-content: flex-end;
+      }
+      .tabs {
+        position: sticky;
+        top: 68px;
+        z-index: 35;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background:
+          radial-gradient(80% 120% at 6% 0%, rgba(196, 255, 68, 0.06), transparent 58%),
+          rgba(17, 20, 26, 0.88);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32);
+        width: 100%;
+        margin: 0 0 24px;
+      }
+      .tab {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 9px;
+        min-height: 70px;
+        padding: 12px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-align: left;
+        transition: color 0.18s, border-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
+      }
+      .tab svg { width: 16px; height: 16px; opacity: 0.85; }
+      .tab:hover {
+        color: var(--ink);
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.035);
+        transform: translateY(-1px);
+      }
+      .tab.active {
+        color: #0a0c08;
+        background: linear-gradient(140deg, var(--lime), var(--lime-deep));
+        box-shadow: 0 8px 24px rgba(196, 255, 68, 0.14);
+      }
+      .tab-text {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .tab-label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+      .tab-copy {
+        display: block;
+        white-space: normal;
+        font-size: 0.66rem;
+        font-weight: 500;
+        line-height: 1.35;
+        color: var(--faint);
+      }
+      .tab.active .tab-copy { color: rgba(10, 12, 8, 0.74); }
+      .tab .num {
+        font-size: 0.7rem;
+        padding: 1px 7px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .tab.active .num { background: rgba(0, 0, 0, 0.18); }
+
+      .station {
+        display: none;
+        padding-top: 16px;
+        scroll-margin-top: 180px;
+        animation: rise 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .station.active { display: block; }
+      @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+      .grid { display: grid; gap: 18px; }
+      .cols-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+        overflow: hidden;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .panel-head h3 {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.92rem;
+        font-weight: 700;
+      }
+      .panel-head .tag {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--faint);
+      }
+      .panel-body { padding: 18px; }
+
+      .hint { font-size: 0.84rem; color: var(--muted); margin: 0 0 14px; }
+
+      /* form controls */
+      .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+      .field { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
+      .field > label {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      select, input[type="text"], textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line-2);
+        border-radius: var(--r-sm);
+        background: var(--bg-2);
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      select:focus, input:focus, textarea:focus {
+        border-color: var(--lime);
+        box-shadow: 0 0 0 3px var(--lime-dim);
+      }
+      textarea { resize: vertical; min-height: 78px; line-height: 1.5; }
+      select { cursor: pointer; }
+
+      .seg {
+        display: inline-flex;
+        padding: 3px;
+        border: 1px solid var(--line-2);
+        border-radius: var(--r-sm);
+        background: var(--bg-2);
+        flex-wrap: wrap;
+      }
+      .seg label { position: relative; cursor: pointer; }
+      .seg input { position: absolute; opacity: 0; pointer-events: none; }
+      .seg span {
+        display: block;
+        padding: 7px 13px;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+      }
+      .seg label:hover input:not(:checked) + span {
+        background: var(--raise);
+        color: var(--ink);
+      }
+      .seg input:focus-visible + span {
+        box-shadow: 0 0 0 3px var(--lime-dim);
+      }
+      .seg input:checked + span { background: var(--lime); color: #0a0c08; font-weight: 600; }
+
+      .slider-wrap { display: flex; align-items: center; gap: 12px; }
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        flex: 1;
+        height: 5px;
+        border-radius: 99px;
+        background: linear-gradient(90deg, var(--lime) var(--pct, 60%), var(--line-2) var(--pct, 60%));
+        outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 17px; height: 17px;
+        border-radius: 50%;
+        background: var(--lime);
+        box-shadow: 0 0 0 4px var(--lime-dim);
+        cursor: pointer;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 17px; height: 17px; border: 0; border-radius: 50%;
+        background: var(--lime); box-shadow: 0 0 0 4px var(--lime-dim); cursor: pointer;
+      }
+      .slider-val { font-family: var(--mono); font-size: 0.85rem; min-width: 18px; color: var(--lime); font-weight: 700; }
+
+      /* sample chips */
+      .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 13px;
+        border: 1px solid var(--line-2);
+        border-radius: 99px;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--muted);
+        transition: all 0.15s;
+        user-select: none;
+      }
+      .chip .ico { width: 8px; height: 8px; border-radius: 2px; background: var(--faint); }
+      .chip[aria-pressed="true"] { border-color: var(--lime); color: var(--ink); background: var(--lime-dim); }
+      .chip[aria-pressed="true"] .ico { background: var(--lime); }
+      .chip .sz { color: var(--faint); font-size: 0.72rem; }
+      /* dropped-file chips read as cyan so they're distinct from lime samples */
+      .chip.user[aria-pressed="true"] { border-color: var(--cyan); background: var(--cyan-dim); }
+      .chip.user[aria-pressed="true"] .ico { background: var(--cyan); }
+      .chip .x {
+        display: inline-grid; place-items: center;
+        width: 16px; height: 16px; margin: -2px -4px -2px 1px;
+        border-radius: 5px; color: var(--faint);
+        font-size: 0.95rem; line-height: 1;
+        transition: color 0.15s, background 0.15s;
+      }
+      .chip .x:hover { color: var(--coral); background: var(--coral-dim); }
+      .chips-empty { font-family: var(--mono); font-size: 0.74rem; color: var(--faint); }
+
+      /* dropzone */
+      .drop {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        padding: 16px 18px;
+        border: 1.5px dashed var(--line-2);
+        border-radius: var(--r-sm);
+        color: var(--muted);
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: border-color 0.18s, background 0.18s;
+        position: relative;
+      }
+      .drop:hover, .drop.hot { border-color: var(--lime); background: var(--lime-dim); color: var(--ink); }
+      .drop .dz-ico {
+        display: grid; place-items: center;
+        width: 38px; height: 38px;
+        border-radius: 9px;
+        background: var(--raise);
+        color: var(--lime);
+        flex-shrink: 0;
+      }
+      .drop .dz-ico svg { width: 20px; height: 20px; }
+      .drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+      .drop b { color: var(--ink); }
+
+      .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+      .action {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 42px;
+        padding: 0 16px;
+        border-radius: 10px;
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        font-weight: 600;
+        transition: transform 0.14s, box-shadow 0.14s, background 0.14s, border-color 0.14s;
+      }
+      .action svg { width: 15px; height: 15px; }
+      .action-go {
+        background: linear-gradient(140deg, var(--lime), var(--lime-deep));
+        color: #0a0c08;
+        box-shadow: 0 6px 20px rgba(196, 255, 68, 0.18);
+      }
+      .action-go:not(:disabled):hover { transform: translateY(-2px); }
+      .action-sec { border: 1px solid var(--line-2); color: var(--ink); }
+      .action-sec:not(:disabled):hover { border-color: var(--lime); color: var(--lime); }
+
+      /* comment config (archive + per-entry) */
+      .cmt-box {
+        border: 1px solid var(--line);
+        border-radius: var(--r-sm);
+        background: var(--bg-2);
+        overflow: hidden;
+      }
+      .cmt-arch {
+        display: flex; align-items: center; gap: 10px;
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .cmt-arch .lbl {
+        font-family: var(--mono); font-size: 0.66rem;
+        letter-spacing: 0.06em; text-transform: uppercase; color: var(--lime);
+        white-space: nowrap;
+      }
+      .cmt-arch input { border: 1px solid var(--line); }
+      .cm-list { display: flex; flex-direction: column; max-height: 188px; overflow: auto; }
+      .cm-row {
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr);
+        gap: 10px; align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .cm-row:last-child { border-bottom: 0; }
+      .cm-row .cm-path {
+        display: flex; align-items: center; gap: 7px;
+        font-family: var(--mono); font-size: 0.74rem; color: var(--ink);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .cm-row .cm-path .cd {
+        width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0;
+        background: var(--cyan);
+      }
+      .cm-row .cm-path .cd.store { background: var(--amber); }
+      .cm-row .cm-path .cd.dir { background: var(--faint); }
+      .cm-row .cm-path .cd.user { background: var(--cyan); box-shadow: 0 0 0 2px var(--cyan-dim); }
+      .cm-row input { padding: 6px 9px; font-size: 0.74rem; border: 1px solid var(--line); }
+      .cm-empty { padding: 14px 12px; font-family: var(--mono); font-size: 0.74rem; color: var(--faint); }
+
+      /* progress ring */
+      .build-status {
+        display: flex; align-items: center; gap: 16px;
+        margin-top: 16px; min-height: 56px;
+      }
+      .ring { width: 52px; height: 52px; flex-shrink: 0; transform: rotate(-90deg); }
+      .ring .bg { fill: none; stroke: var(--line-2); stroke-width: 5; }
+      .ring .fg {
+        fill: none; stroke: var(--lime); stroke-width: 5; stroke-linecap: round;
+        stroke-dasharray: 138; stroke-dashoffset: 138;
+        transition: stroke-dashoffset 0.3s ease;
+        filter: drop-shadow(0 0 4px rgba(196, 255, 68, 0.5));
+      }
+      .build-status .phase { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); }
+      .build-status .phase b { color: var(--lime); }
+
+      /* compression bars (forge result) */
+      .cbars { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
+      .cbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr) auto;
+        gap: 12px;
+        align-items: center;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+      .cbar .nm { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .cbar .nm .badge {
+        font-size: 0.62rem; padding: 1px 6px; border-radius: 4px; margin-left: 6px;
+        background: var(--cyan-dim); color: var(--cyan);
+      }
+      .cbar .nm .badge.store { background: var(--amber-dim); color: var(--amber); }
+      .cbar .track {
+        position: relative; height: 14px; border-radius: 5px;
+        background: var(--line); overflow: hidden;
+      }
+      .cbar .orig {
+        position: absolute; inset: 0; width: 100%;
+        background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 12px);
+      }
+      .cbar .comp {
+        position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+        background: linear-gradient(90deg, var(--lime-deep), var(--lime));
+        border-radius: 5px;
+        transition: width 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: 0 0 10px rgba(196, 255, 68, 0.4);
+      }
+      .cbar .pct { color: var(--lime); text-align: right; min-width: 48px; }
+      .cbar .pct.store { color: var(--amber); }
+
+      /* entry table / inspect rows */
+      .entries { display: flex; flex-direction: column; gap: 7px; }
+      .erow {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1.6fr) minmax(0, 1.4fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 11px 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-sm);
+        background: var(--bg-2);
+        cursor: pointer;
+        transition: border-color 0.15s, transform 0.15s, background 0.15s;
+        animation: rowin 0.4s backwards cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes rowin { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+      .erow:hover { border-color: var(--line-2); transform: translateX(2px); }
+      .erow.sel { border-color: var(--lime); background: var(--lime-dim); }
+      .erow .ei { display: grid; place-items: center; color: var(--cyan); }
+      .erow .ei.dir { color: var(--amber); }
+      .erow .ei svg { width: 16px; height: 16px; }
+      .erow .ep { font-family: var(--mono); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .erow .ebar { position: relative; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+      .erow .ebar i {
+        position: absolute; left: 0; top: 0; bottom: 0;
+        background: linear-gradient(90deg, var(--cyan), var(--lime));
+        border-radius: 4px;
+      }
+      .erow .emeta { font-family: var(--mono); font-size: 0.68rem; color: var(--faint); white-space: nowrap; text-align: right; }
+      .empty { padding: 30px; text-align: center; color: var(--faint); font-family: var(--mono); font-size: 0.84rem; }
+
+      /* entries filter + count */
+      .entries-bar {
+        display: flex; align-items: center; gap: 9px;
+        margin-bottom: 10px;
+        padding: 7px 11px;
+        border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-2);
+      }
+      .entries-bar .ent-search { display: grid; place-items: center; color: var(--faint); flex: 0 0 auto; }
+      .entries-bar .ent-search svg { width: 15px; height: 15px; }
+      .entries-filter {
+        flex: 1; min-width: 0;
+        border: 0; background: transparent; outline: none;
+        font-family: var(--mono); font-size: 0.78rem; color: var(--ink);
+      }
+      .entries-filter::placeholder { color: var(--faint); }
+      .entries-count {
+        flex: 0 0 auto;
+        font-family: var(--mono); font-size: 0.66rem; color: var(--muted);
+        padding: 3px 8px; border-radius: 6px; background: var(--raise);
+        white-space: nowrap;
+      }
+
+      /* virtualized scroller: only the visible window is in the DOM */
+      .entries.virtual {
+        display: block; position: relative;
+        max-height: 460px; overflow-y: auto; overflow-x: hidden;
+        scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
+        border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg);
+      }
+      .entries.virtual::-webkit-scrollbar { width: 10px; }
+      .entries.virtual::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+      .entries.virtual .evp { position: relative; width: 100%; }
+      .entries.virtual .erows { position: absolute; inset: 0; }
+      .entries.virtual .erow {
+        position: absolute; left: 6px; right: 6px;
+        height: 42px; margin: 0; animation: none;
+        overflow: hidden;
+      }
+
+      /* archive structure ribbon */
+      .ribbon {
+        display: flex; height: 30px; border-radius: 7px; overflow: hidden;
+        border: 1px solid var(--line-2); margin-bottom: 14px; background: var(--bg-2);
+      }
+      .ribbon .seg-b {
+        min-width: 3px; height: 100%;
+        border-right: 1px solid rgba(0, 0, 0, 0.35);
+        transition: flex 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
+        animation: segin 0.5s backwards;
+      }
+      @keyframes segin { from { transform: scaleX(0); transform-origin: left; } }
+      .ribbon .seg-b:last-child { border-right: 0; }
+      .ribbon-key { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-bottom: 16px; }
+      .ribbon-key span { display: inline-flex; align-items: center; gap: 6px; }
+      .ribbon-key i { width: 10px; height: 10px; border-radius: 3px; }
+
+      /* preview */
+      .preview {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        padding: 16px;
+        border-radius: var(--r-sm);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        min-height: 120px;
+        max-height: 360px;
+        overflow: auto;
+      }
+      .preview .hl { color: var(--lime); }
+      .preview .hl-c { color: var(--cyan); }
+
+      /* stream — live write→read demo */
+      .sstep { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.05em;
+        text-transform: uppercase; color: var(--faint);
+        display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
+      .sstep .n { width: 19px; height: 19px; border-radius: 50%; display: grid;
+        place-items: center; background: var(--raise); color: var(--lime);
+        font-size: 0.68rem; font-weight: 700; }
+      .sstep b { color: var(--cyan); font-family: var(--mono); }
+      .sled { display: flex; flex-direction: column; gap: 6px; }
+      .sin {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-2); font-family: var(--mono); font-size: 0.76rem;
+        transition: border-color 0.25s, opacity 0.25s;
+      }
+      .sin .dot2 { width: 8px; height: 8px; border-radius: 50%; background: var(--faint);
+        flex-shrink: 0; transition: background 0.25s, box-shadow 0.25s; }
+      .sin .nm2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sin .mtag { font-size: 0.58rem; padding: 1px 6px; border-radius: 4px;
+        background: var(--cyan-dim); color: var(--cyan); }
+      .sin .mtag.store { background: var(--amber-dim); color: var(--amber); }
+      .sin .sz2 { margin-left: auto; color: var(--faint); font-size: 0.7rem; flex-shrink: 0; }
+      .sin.writing { border-color: var(--cyan); background: var(--cyan-dim); }
+      .sin.writing .dot2 { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: blink 0.8s infinite; }
+      .sin.done .dot2 { background: var(--lime); box-shadow: 0 0 6px var(--lime); }
+      .sin.done { opacity: 0.78; }
+
+      .sgap { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--faint); }
+      .sgap .ln2 { flex: 1; height: 1px; background: var(--line-2); }
+      .sgap svg { width: 16px; height: 16px; }
+      .sgap.flowing svg { color: var(--cyan); animation: bob 0.7s ease-in-out infinite; }
+      @keyframes bob { 50% { transform: translateY(3px); } }
+
+      .out-meter { display: flex; align-items: center; gap: 11px; margin-bottom: 10px; }
+      .out-meter .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+      .out-meter .bar i { display: block; height: 100%; width: 0;
+        background: linear-gradient(90deg, var(--cyan), var(--lime));
+        box-shadow: 0 0 8px rgba(79, 227, 221, 0.5); transition: width 0.2s; }
+      .out-meter .tot { font-family: var(--mono); font-size: 0.84rem; font-weight: 700;
+        color: var(--cyan); min-width: 74px; text-align: right; }
+      .chunks { display: flex; flex-direction: column; gap: 4px; max-height: 150px;
+        overflow: auto; font-family: var(--mono); font-size: 0.72rem; }
+      .chunks .ck { display: flex; gap: 10px; color: var(--muted);
+        animation: rowin 0.25s backwards cubic-bezier(0.16, 1, 0.3, 1); }
+      .chunks .ck .kn { color: var(--cyan); flex-shrink: 0; }
+      .chunks .ck .kb { color: var(--ink); }
+      .chunks .ck .kt { margin-left: auto; color: var(--faint); }
+
+      /* iterator yield rows */
+      .yielded { display: flex; flex-direction: column; gap: 7px; }
+      .yi {
+        display: grid; grid-template-columns: 18px minmax(0, 1fr) auto;
+        gap: 10px; align-items: center;
+        padding: 9px 12px; border-radius: var(--r-sm);
+        border: 1px solid var(--line); background: var(--bg-2);
+        font-family: var(--mono); font-size: 0.78rem;
+        animation: rowin 0.35s backwards cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .yi .yic { display: grid; place-items: center; color: var(--faint); }
+      .yi .yic svg { width: 15px; height: 15px; }
+      .yi .yic.read { color: var(--cyan); }
+      .yi .ytext { overflow: hidden; }
+      .yi .ytext .yp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .yi .ytext .ysnip { color: var(--faint); font-size: 0.68rem; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; }
+      .yi .yv { font-size: 0.66rem; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+      .yi .yv.read { background: var(--cyan-dim); color: var(--cyan); }
+      .yi .yv.skip { background: var(--line); color: var(--faint); }
+
+      /* shield cards */
+      .shields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+      .shield {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+        padding: 18px;
+        overflow: hidden;
+        transition: border-color 0.3s;
+      }
+      .shield.fired { border-color: var(--coral); }
+      .shield.fired.safe { border-color: var(--lime); }
+      .shield::before {
+        content: "";
+        position: absolute; left: 0; right: 0; top: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, var(--lime), transparent);
+        transform: translateX(-100%);
+      }
+      .shield.scanning::before { animation: scan 1s ease-in-out; }
+      @keyframes scan { to { transform: translateX(100%); } }
+      .shield h4 {
+        margin: 0 0 4px;
+        font-family: var(--mono);
+        font-size: 0.92rem;
+        display: flex; align-items: center; gap: 9px;
+      }
+      .shield h4 .si { color: var(--coral); display: grid; place-items: center; }
+      .shield h4 .si svg { width: 18px; height: 18px; }
+      .shield p { margin: 0 0 14px; font-size: 0.82rem; color: var(--muted); }
+      .shield code { font-family: var(--mono); color: var(--cyan); font-size: 0.92em; }
+      .verdict {
+        display: none;
+        margin-top: 14px;
+        padding: 13px;
+        border-radius: var(--r-sm);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+      .verdict.show { display: block; animation: stamp 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+      @keyframes stamp { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+      .verdict .vline { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+      .verdict .vline:last-child { margin-bottom: 0; }
+      .verdict .v-badge {
+        font-weight: 700; padding: 2px 9px; border-radius: 6px; font-size: 0.72rem;
+        letter-spacing: 0.04em;
+      }
+      .v-badge.block { background: var(--coral-dim); color: var(--coral); }
+      .v-badge.allow { background: var(--lime-dim); color: var(--lime); }
+      .v-badge.note { background: var(--amber-dim); color: var(--amber); }
+      .verdict .vtxt { color: var(--muted); }
+      .verdict .vtxt b { color: var(--ink); }
+
+      /* shield — scenario intro + two-lane comparison */
+      .shield-intro {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+        padding: 16px 18px; margin-bottom: 16px;
+        border: 1px solid var(--line); border-radius: var(--r);
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      }
+      .shield-intro .si-ico { display: grid; place-items: center; width: 38px; height: 38px;
+        border-radius: 9px; background: var(--coral-dim); color: var(--coral); flex-shrink: 0; }
+      .shield-intro .si-ico svg { width: 20px; height: 20px; }
+      .shield-intro .si-txt { flex: 1; min-width: 200px; font-size: 0.86rem; color: var(--muted); }
+      .shield-intro .si-txt b { color: var(--ink); }
+      .shield-intro .tally { font-family: var(--mono); font-size: 0.82rem; color: var(--faint);
+        padding: 7px 13px; border: 1px solid var(--line); border-radius: 99px; }
+      .shield-intro .tally b { color: var(--lime); }
+
+      .guard-tag { font-family: var(--mono); font-size: 0.6rem; padding: 2px 7px;
+        border-radius: 5px; background: var(--lime-dim); color: var(--lime); margin-left: auto; }
+      .shield h4 .guard-tag { font-weight: 400; }
+
+      .threat-row { display: flex; align-items: flex-start; gap: 9px;
+        font-family: var(--mono); font-size: 0.75rem; color: var(--ink); margin-bottom: 12px; line-height: 1.45; }
+      .threat-row .ti { color: var(--coral); flex-shrink: 0; }
+      .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .lane-card { border: 1px solid var(--line); border-radius: var(--r-sm);
+        padding: 11px; background: var(--bg); }
+      .lane-card .lc-head { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.04em;
+        text-transform: uppercase; display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
+      .lane-card .lc-head svg { width: 14px; height: 14px; }
+      .lane-card.danger { border-color: rgba(255, 93, 82, 0.28); }
+      .lane-card.danger .lc-head { color: var(--coral); }
+      .lane-card.safe { border-color: rgba(196, 255, 68, 0.28); }
+      .lane-card.safe .lc-head { color: var(--lime); }
+      .lane-card .lc-body { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+      .lane-card .lc-body b { color: var(--ink); }
+      .lane-card .lc-body code { color: var(--cyan); }
+      .lane-badge { display: inline-block; font-weight: 700; font-size: 0.6rem;
+        padding: 2px 7px; border-radius: 5px; margin-bottom: 7px; letter-spacing: 0.04em; }
+      .lane-badge.danger { background: var(--coral-dim); color: var(--coral); }
+      .lane-badge.note { background: var(--amber-dim); color: var(--amber); }
+      .lane-badge.safe { background: var(--lime-dim); color: var(--lime); }
+      .outcome { margin-top: 12px; font-family: var(--mono); font-size: 0.76rem;
+        color: var(--lime); display: flex; align-items: center; gap: 8px; }
+      .outcome svg { width: 15px; height: 15px; }
+
+      /* console */
+      .console {
+        margin-top: 22px;
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .console-head {
+        display: flex; align-items: center; gap: 9px;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono); font-size: 0.74rem; color: var(--faint);
+      }
+      .console-head .lights { display: flex; gap: 6px; }
+      .console-head .lights i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); }
+      .console-head .lights i:first-child { background: var(--coral); }
+      .console-head .lights i:nth-child(2) { background: var(--amber); }
+      .console-head .lights i:nth-child(3) { background: var(--lime); }
+      .log {
+        padding: 12px 16px;
+        max-height: 190px;
+        overflow: auto;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        line-height: 1.7;
+      }
+      .log .ln { display: flex; gap: 10px; opacity: 0; animation: rowin 0.3s forwards; }
+      .log .ln .t { color: var(--faint); flex-shrink: 0; }
+      .log .ln .api { color: var(--lime); flex-shrink: 0; }
+      .log .ln .api.err { color: var(--coral); }
+      .log .ln .msg { color: var(--muted); }
+
+      /* toast */
+      .toast {
+        position: fixed;
+        left: 50%; bottom: 26px;
+        transform: translate(-50%, 120%);
+        padding: 12px 20px;
+        border-radius: 11px;
+        background: var(--raise);
+        border: 1px solid var(--line-2);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        z-index: 80;
+        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+        max-width: 88vw;
+      }
+      .toast.show { transform: translate(-50%, 0); }
+      .toast::before {
+        content: "›";
+        color: var(--lime);
+        margin-right: 9px;
+        font-weight: 700;
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 26px 0;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        color: var(--faint);
+      }
+      footer a { color: var(--muted); text-decoration: none; }
+      footer a:hover { color: var(--lime); }
+
+      /* reveal on load */
+      .reveal { opacity: 0; transform: translateY(16px); animation: rise 0.6s forwards cubic-bezier(0.16, 1, 0.3, 1); }
+      .d1 { animation-delay: 0.05s; }
+      .d2 { animation-delay: 0.13s; }
+      .d3 { animation-delay: 0.21s; }
+      .d4 { animation-delay: 0.3s; }
+
+      .vic { padding: 0 clamp(24px, 5vw, 48px); }
+
+      @media (max-width: 1080px) {
+        .viz { max-width: 820px; width: 100%; margin: 0 auto; }
+        .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .lab-deck-head { flex-direction: column; }
+        .lab-deck .hero-cta { justify-content: flex-start; }
+      }
+      @media (max-width: 900px) {
+        .cols-2 { grid-template-columns: 1fr; }
+        .shields { grid-template-columns: 1fr; }
+        .caps { display: none; }
+        .topnav { display: none; }
+      }
+      @media (max-width: 760px) {
+        .wrap { padding-left: 28px; padding-right: 28px; }
+      }
+      @media (max-width: 560px) {
+        .wrap { padding-left: 24px; padding-right: 24px; }
+        .topbar { padding-inline: 24px; }
+        .hero { padding-top: 30px; }
+        h1 { font-size: clamp(2rem, 10.5vw, 3rem); }
+        .panel-body { padding: 14px; }
+        .panel-head { padding: 13px 14px; }
+        .status-strip { grid-template-columns: 1fr; }
+        .lab-deck { padding: 12px; }
+        .lab-deck .hero-cta { width: 100%; }
+        .viz-stage { padding: 14px; }
+        .viz-caption { padding: 0 14px 14px; align-items: flex-start; flex-direction: column; }
+        .seg { display: flex; width: 100%; }
+        .seg label { flex: 1; }
+        .seg span { text-align: center; padding: 7px 8px; }
+        .tab { min-height: 62px; padding: 10px; }
+        .tabs { grid-template-columns: 1fr; width: 100%; }
+        .station { scroll-margin-top: 260px; }
+        .shield { padding: 15px; }
+        .shield-intro { padding: 14px; }
+        .lanes { grid-template-columns: 1fr; }
+        .cm-row { grid-template-columns: 1fr; gap: 6px; }
+        .hero-cta .btn { flex: 1; }
+        .toolbar .action { flex: 1; justify-content: center; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.05s !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grain" id="page-grain"></div>
+
+    <header class="topbar" id="site-header">
+      <a class="brand" href="../pages/index.html" style="text-decoration: none;">
+        <span class="mark" aria-hidden="true">
+          <img src="../assets/icon.png" alt="" />
+        </span>
+        <span>JS<b>Zipp</b></span>
+      </a>
+      <span class="spacer"></span>
+      <nav class="topnav" id="primary-nav">
+        <a href="../pages/index.html">Overview</a>
+        <a href="../pages/api.html">API</a>
+        <a href="./compress.html">Compressor</a>
+        <a href="./library-benchmark.html">Benchmark</a>
+      </nav>
+      <div class="caps" id="caps" aria-label="Browser capabilities"></div>
+    </header>
+
+    <div id="top"></div>
+
+    <section class="wrap hero vic" id="hero">
+      <div class="vih" id="hero-copy">
+        <h1 class="hero-banner"><div class="hero-brand">JS<span class="hero-brand-color">Zipp</span><span class="hero-brand-sub"> - ZIPs in the modern browser</span></div><span class="accent hero-banner-message">Fast, compact, and defensive.</span></h1>
+      </div>
+    </section>
+
+    <main class="wrap workbench" id="lab">
+      <section class="lab-deck reveal d3" aria-label="Demo workflow">
+        <div class="lab-deck-head">
+          <div>
+            <span class="lab-kicker">Demo route</span>
+            <div class="lab-deck-title">Write, inspect, stream, then harden an untrusted ZIP.</div>
+            <div class="lab-deck-note">This mirrors the browser trust-boundary workflow described in the docs.</div>
+          </div>
+          <div class="hero-cta" id="hero-actions">
+            <a class="btn btn-primary" href="#lab-station-tabs" id="cta-build">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Start
+            </a>
+            <a class="btn btn-ghost" href="compress.html">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 6h14M8 12h8M10 18h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 3h10l2 3-2 3H7L5 6l2-3ZM10 15h4l2 3-2 3h-4l-2-3 2-3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+              Compressor
+            </a>
+            <a class="btn btn-ghost" href="library-benchmark.html">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 18 10 9l4 5 3-8 2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              Benchmark
+            </a>
+          </div>
+        </div>
+        <div class="status-rail reveal d4" id="current-run-status" aria-label="Current archive status">
+          <div class="rail-label">Current run</div>
+          <div class="status-strip">
+            <div class="stat hot" id="queue-status-card">
+              <div class="k"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7 12 3l8 4v10l-8 4-8-4z M12 3v18" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Queue</div>
+              <div class="v"><span id="s-entries">0</span></div>
+              <div class="stat-sub">entries queued</div>
+            </div>
+            <div class="stat" id="output-status-card">
+              <div class="k"><svg viewBox="0 0 24 24" fill="none"><path d="M9 3h6M9 7h6M9 11h6M11 15h2v6h-2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Output</div>
+              <div class="v" id="s-size">0 B</div>
+              <div class="stat-sub">archive bytes</div>
+            </div>
+            <div class="stat" id="savings-status-card">
+              <div class="k"><svg viewBox="0 0 24 24" fill="none"><path d="M5 18 10 9l4 5 3-8 2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Savings</div>
+              <div class="v" id="s-ratio">—</div>
+              <div class="stat-sub">after compression</div>
+            </div>
+            <div class="stat" id="crc-status-card">
+              <div class="k"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>CRC sample</div>
+              <div class="v" id="s-crc">pending</div>
+              <div class="stat-sub">first file check</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <nav class="tabs" id="lab-station-tabs" role="tablist" aria-label="Lab stations">
+        <button class="tab active" id="forge-tab" data-station="forge" role="tab" aria-label="1 Forge: pick samples or drop files, then build a ZIP">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 7 12 3l8 4v10l-8 4-8-4z M12 3v18 M4 7l8 4 8-4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span class="tab-text"><span class="tab-label" id="tab-label-start">1 Forge</span><span class="tab-copy">Pick samples or drop files, then build a ZIP.</span></span>
+        </button>
+        <button class="tab" id="inspect-tab" data-station="inspect" role="tab" aria-label="2 Inspect: open an archive and read entries three ways">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span class="tab-text"><span class="tab-label">2 Inspect <span class="num" id="tab-entries">0</span></span><span class="tab-copy">Open an archive and read entries three ways.</span></span>
+        </button>
+        <button class="tab" id="stream-tab" data-station="stream" role="tab" aria-label="3 Stream: emit ZIP chunks while entries are still writing">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h16M4 16h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span class="tab-text"><span class="tab-label">3 Stream</span><span class="tab-copy">Emit ZIP chunks while entries are still writing.</span></span>
+        </button>
+        <button class="tab" id="shield-tab" data-station="shield" role="tab" aria-label="4 Shield: run real unsafe ZIP cases against guards">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span class="tab-text"><span class="tab-label">4 Shield</span><span class="tab-copy">Run real unsafe ZIP cases against guards.</span></span>
+        </button>
+      </nav>
+
+      <!-- FORGE -->
+      <section class="station active" id="station-forge" role="tabpanel">
+        <div class="grid cols-2">
+          <div class="panel" id="forge-builder-panel">
+            <div class="panel-head"><h3>Forge an archive</h3><span class="tag">ZipWriter.add → close</span></div>
+            <div class="panel-body">
+              <div class="field" style="margin-bottom: 16px">
+                <label>Sample entries</label>
+                <div class="chips" id="sample-chips"></div>
+              </div>
+
+              <label class="drop" id="drop-src">
+                <span class="dz-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0 4 4m-4-4-4 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 17v3h14v-3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></span>
+                <span><b>Drop your own files</b> — they become Blob entries.<br /><span id="drop-count" style="color: var(--faint)">Folders preserve their paths.</span></span>
+                <input type="file" id="src-input" multiple webkitdirectory directory />
+              </label>
+
+              <div class="chips" id="user-chips" style="margin-top: 12px"></div>
+
+              <div class="field" style="margin-top: 16px">
+                <label>Comments · <code style="color: var(--cyan)">writer.comment</code> + <code style="color: var(--cyan)">meta.comment</code></label>
+                <div class="cmt-box">
+                  <div class="cmt-arch">
+                    <span class="lbl">Archive</span>
+                    <input type="text" id="arch-comment" value="Forged in the JSZipp browser lab" placeholder="whole-archive comment…" />
+                  </div>
+                  <div class="cm-list" id="cm-list"></div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top: 16px">
+                <div class="field" style="flex: 1.4">
+                  <label>Compression level</label>
+                  <div class="slider-wrap">
+                    <input type="range" id="level" min="0" max="9" value="6" />
+                    <span class="slider-val mono" id="level-val">6</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>ZIP64</label>
+                  <div class="seg" role="radiogroup">
+                    <label><input type="radio" name="zip64" value="auto" checked /><span>auto</span></label>
+                    <label><input type="radio" name="zip64" value="force" /><span>force</span></label>
+                    <label><input type="radio" name="zip64" value="off" /><span>off</span></label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field" style="margin-top: 16px">
+                <label>Output target · <code style="color: var(--cyan)">writer.close()</code> returns</label>
+                <div class="seg" role="radiogroup">
+                  <label><input type="radio" name="out" value="blob" checked /><span>Blob</span></label>
+                  <label><input type="radio" name="out" value="stream" /><span>Stream</span></label>
+                  <label><input type="radio" name="out" value="response" /><span>Response</span></label>
+                  <label><input type="radio" name="out" value="uint8array" /><span>Bytes</span></label>
+                  <label><input type="radio" name="out" value="arraybuffer" /><span>Buffer</span></label>
+                </div>
+              </div>
+
+              <div class="build-status">
+                <svg class="ring" viewBox="0 0 52 52"><circle class="bg" cx="26" cy="26" r="22"/><circle class="fg" id="ring-fg" cx="26" cy="26" r="22"/></svg>
+                <div class="phase" id="build-phase">Ready. Toggle samples and forge.</div>
+              </div>
+
+              <div class="toolbar" style="margin-top: 16px">
+                <button class="action action-go" id="btn-build">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                  Forge ZIP
+                </button>
+                <button class="action action-sec" id="btn-cancel" disabled>Cancel</button>
+                <button class="action action-sec" id="btn-download" disabled>
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Download
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" id="compression-panel">
+            <div class="panel-head"><h3>Compression</h3><span class="tag">original vs. stored bytes</span></div>
+            <div class="panel-body">
+              <div class="cbars" id="cbars"><div class="empty">Forge an archive to watch each entry compress.</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSPECT -->
+      <section class="station" id="station-inspect" role="tabpanel">
+        <div class="grid cols-2">
+          <div class="panel" id="archive-map-panel">
+            <div class="panel-head"><h3>Archive map</h3><span class="tag">openZip().entries</span></div>
+            <div class="panel-body">
+              <label class="drop" id="drop-zip" style="margin-bottom: 16px">
+                <span class="dz-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M9 3h6M9 7h6M9 11h6M11 15h2v6h-2z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></span>
+                <span><b>Drop a .zip</b> to inspect — or forge one first.</span>
+                <input type="file" id="zip-input" accept=".zip" />
+              </label>
+
+              <div class="row" style="margin-bottom: 16px">
+                <div class="field">
+                  <label>Path safety</label>
+                  <select id="path-mode">
+                    <option value="strict" selected>strict</option>
+                    <option value="strict-package">strict-package</option>
+                    <option value="sanitize">sanitize</option>
+                    <option value="unsafe">unsafe</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Reader source</label>
+                  <select id="reader-source">
+                    <option value="blob" selected>Blob / File</option>
+                    <option value="arraybuffer">ArrayBuffer</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="ribbon" id="ribbon" style="display: none"></div>
+              <div class="ribbon-key" id="ribbon-key" style="display: none">
+                <span><i style="background: var(--cyan)"></i>deflated</span>
+                <span><i style="background: var(--amber)"></i>stored</span>
+                <span><i style="background: var(--faint)"></i>directory</span>
+                <span><i style="background: var(--lime)"></i>central dir + EOCD</span>
+              </div>
+
+              <div class="entries-bar">
+                <span class="ent-search" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+                <input class="entries-filter" id="entry-filter" type="text" placeholder="Filter entries by path…" autocomplete="off" spellcheck="false" />
+                <span class="entries-count" id="entries-count">0</span>
+              </div>
+              <div class="entries" id="entries"><div class="empty">No archive open.</div></div>
+            </div>
+          </div>
+
+          <div class="panel" id="entry-reader-panel">
+            <div class="panel-head"><h3>Entry reader</h3><span class="tag">text() · bytes() · arrayBuffer()</span></div>
+            <div class="panel-body">
+              <pre class="preview" id="preview">Select an entry to read it three ways and verify its CRC&#8209;32.</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STREAM -->
+      <section class="station" id="station-stream" role="tabpanel">
+        <div class="grid cols-2">
+          <div class="panel" id="stream-writer-panel">
+            <div class="panel-head"><h3>Streaming writer</h3><span class="tag">ZipTransformStream</span></div>
+            <div class="panel-body">
+              <p class="hint">Entries written into <code style="color: var(--cyan); font-family: var(--mono)">.writable</code> become ZIP bytes on <code style="color: var(--cyan); font-family: var(--mono)">.readable</code> <em>as you go</em> — watch bytes leave before the last entry is even added. Nothing buffers the whole archive.</p>
+
+              <p class="sstep"><span class="n">1</span> writing into <b>.writable</b></p>
+              <div class="sled" id="sled-in"><div class="empty">Press run to feed entries in.</div></div>
+
+              <div class="sgap" id="s-gap">
+                <span class="ln2"></span>
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v16m0 0 6-6m-6 6-6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="ln2"></span>
+              </div>
+
+              <p class="sstep"><span class="n">2</span> emitted from <b>.readable</b></p>
+              <div class="out-meter">
+                <span class="bar"><i id="stream-bar"></i></span>
+                <span class="tot" id="bytes-out">0 B</span>
+              </div>
+              <div class="chunks" id="chunks"><div class="empty">Byte chunks appear here in real time.</div></div>
+
+              <button class="action action-go" id="btn-transform" style="margin-top: 16px">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Run streaming build
+              </button>
+            </div>
+          </div>
+
+          <div class="panel" id="stream-reader-panel">
+            <div class="panel-head"><h3>Read it back, one entry at a time</h3><span class="tag">readZipStream()</span></div>
+            <div class="panel-body">
+              <p class="hint"><code style="color: var(--cyan); font-family: var(--mono)">for await (const entry of readZipStream(…))</code> pulls each entry forward-only: read text, skip binaries &amp; directories, never seek back.</p>
+              <button class="action action-sec" id="btn-scan" disabled style="margin-bottom: 16px">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Scan current archive
+              </button>
+              <div class="yielded" id="yielded"><div class="empty">Run the streaming build (or forge / open an archive), then scan.</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SHIELD -->
+      <section class="station" id="station-shield" role="tabpanel">
+        <div class="shield-intro" id="shield-station">
+          <span class="si-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>
+          <span class="si-txt">Each card crafts a <b>real malicious archive</b>, then opens it twice: once <b>unguarded</b> and once through a JSZipp <b>guard option</b>. Watch the guard slam shut while the naïve path lets the payload through.</span>
+          <button class="action action-go" id="btn-runall">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M5 4v16l14-8z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            Run all defenses
+          </button>
+          <span class="tally" id="shield-tally"><b>0</b> / 4 blocked</span>
+        </div>
+        <div class="shields" id="shields"></div>
+      </section>
+
+      <!-- console -->
+      <div class="console" id="api-trace-console">
+        <div class="console-head" id="api-trace-header">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span>jszipp · live api trace</span>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </main>
+
+    <footer id="site-footer">
+      JSZipp — zero-dependency ZIP for the browser ·
+      <a href="../README.md">API guide</a> · <a href="../CONTRACT.md">contract</a> · MIT
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module">
+      import JSZipp, { ZipTransformStream, ZipWriter, openZip, readZipStream } from "../dist/jszipp.mjs";
+
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
+      const enc = new TextEncoder();
+
+      const state = {
+        userFiles: [],        // [{ id, file, on, comment }]
+        uid: 0,
+        archive: null,        // Blob currently in play
+        archiveName: "jszipp-demo.zip",
+        archiveComment: "Forged in the JSZipp browser lab",
+        downloadBlob: null,
+        reader: null,
+        selected: -1,
+        abort: null,
+        originalBytes: 0,
+        view: [],            // filtered entry indices currently shown
+        maxC: 1,             // largest compressedSize, for bar scaling
+        entryFilter: "",
+        entriesPaint: null   // repaint the visible virtual window
+      };
+
+      // sample entry manifest -------------------------------------------------
+      const SAMPLES = [
+        { id: "notes", path: "notes.txt", on: true, method: "deflate",
+          data: "Hello from JSZipp. Written as a string entry with a comment, a modified date, and a custom extra field.\n",
+          meta: { comment: "string payload · extraField + mtime", modifiedAt: new Date(),
+            extraField: new Uint8Array([0x99, 0x99, 0x02, 0x00, 0xaa, 0xbb]) } },
+        { id: "readme", path: "README.md", on: true, method: "deflate",
+          data: "# Generated by JSZipp\n\nThis archive was forged in the browser demo.\nEvery byte here was DEFLATE-compressed by JSZipp's writer.\n".repeat(6),
+          meta: { comment: "markdown sample" } },
+        { id: "report", path: "data/report.json", on: true, method: "deflate",
+          data: JSON.stringify({ library: "JSZipp", api: "ZipWriter", entries: 7, generatedAt: "2026-01-01T00:00:00Z", nested: { ok: true, items: [1, 2, 3, 4, 5] } }, null, 2),
+          meta: { comment: "json sample" } },
+        { id: "logo", path: "assets/logo.bin", on: true, method: "store",
+          data: (() => { const a = new Uint8Array(2048); for (let i = 0; i < a.length; i++) a[i] = (i * 73 + 11) & 0xff; return a; })(),
+          meta: { comment: "stored binary (pre-compressed)" } },
+        { id: "script", path: "scripts/run.sh", on: true, method: "deflate",
+          data: "#!/bin/sh\necho \"JSZipp preserves unix mode bits\"\nexit 0\n",
+          meta: { comment: "executable", unixMode: 0o100755 } },
+        { id: "dir", path: "assets/", on: true, data: "",
+          meta: { unixMode: 0o040755 } }
+      ];
+
+      const els = {
+        caps: $("#caps"),
+        sEntries: $("#s-entries"), sSize: $("#s-size"), sRatio: $("#s-ratio"), sCrc: $("#s-crc"),
+        vizState: $("#viz-state"), zipCount: $("#zip-count"),
+        sampleChips: $("#sample-chips"),
+        userChips: $("#user-chips"),
+        archComment: $("#arch-comment"), cmList: $("#cm-list"),
+        dropSrc: $("#drop-src"), srcInput: $("#src-input"), dropCount: $("#drop-count"),
+        level: $("#level"), levelVal: $("#level-val"),
+        ringFg: $("#ring-fg"), buildPhase: $("#build-phase"),
+        btnBuild: $("#btn-build"), btnCancel: $("#btn-cancel"), btnDownload: $("#btn-download"),
+        cbars: $("#cbars"),
+        dropZip: $("#drop-zip"), zipInput: $("#zip-input"),
+        pathMode: $("#path-mode"), readerSource: $("#reader-source"),
+        ribbon: $("#ribbon"), ribbonKey: $("#ribbon-key"),
+        entries: $("#entries"), preview: $("#preview"),
+        entryFilter: $("#entry-filter"), entriesCount: $("#entries-count"),
+        tabEntries: $("#tab-entries"),
+        sledIn: $("#sled-in"), sGap: $("#s-gap"), streamBar: $("#stream-bar"),
+        bytesOut: $("#bytes-out"), chunks: $("#chunks"), btnTransform: $("#btn-transform"),
+        btnScan: $("#btn-scan"), yielded: $("#yielded"),
+        shields: $("#shields"), btnRunall: $("#btn-runall"), shieldTally: $("#shield-tally"),
+        log: $("#log"), toast: $("#toast")
+      };
+
+      // ---------------------------------------------------------------- init
+      function init() {
+        renderCaps();
+        renderSampleChips();
+        renderUserChips();
+        renderCommentEditor();
+        bindTabs();
+        bindDrop(els.dropSrc, els.srcInput, onUserFiles);
+        bindDrop(els.dropZip, els.zipInput, onZipFiles);
+        // entry list: one delegated click handler (no per-row listeners) + debounced filter
+        els.entries.addEventListener("click", (ev) => {
+          const row = ev.target.closest(".erow");
+          if (row && row.dataset.i != null) preview(Number(row.dataset.i));
+        });
+        let filterT;
+        els.entryFilter.addEventListener("input", () => {
+          clearTimeout(filterT);
+          filterT = setTimeout(() => { state.entryFilter = els.entryFilter.value; if (state.reader) renderEntries(); }, 120);
+        });
+        els.level.addEventListener("input", () => {
+          els.levelVal.textContent = els.level.value;
+          els.level.style.setProperty("--pct", (els.level.value / 9 * 100) + "%");
+        });
+        els.level.style.setProperty("--pct", (6 / 9 * 100) + "%");
+        els.archComment.addEventListener("input", () => { state.archiveComment = els.archComment.value; });
+        els.btnBuild.addEventListener("click", buildZip);
+        els.btnCancel.addEventListener("click", () => state.abort?.abort());
+        els.btnDownload.addEventListener("click", download);
+        els.pathMode.addEventListener("change", () => { log("openZip", "pathMode = " + els.pathMode.value); reopen(); });
+        els.readerSource.addEventListener("change", () => { log("openZip", "source = " + els.readerSource.value); reopen(); });
+        els.btnTransform.addEventListener("click", runTransform);
+        els.btnScan.addEventListener("click", scanArchive);
+        renderShields();
+        els.btnRunall.addEventListener("click", runAllAttacks);
+        log("ready", "JSZipp namespace loaded · " + Object.keys(JSZipp).join(", "));
+      }
+
+      function renderCaps() {
+        const checks = [
+          ["ReadableStream", "ReadableStream" in window],
+          ["TransformStream", "TransformStream" in window],
+          ["DecompressionStream", "DecompressionStream" in window]
+        ];
+        els.caps.innerHTML = checks.map(([n, ok]) =>
+          `<span class="cap ${ok ? "ok" : ""}"><span class="dot"></span>${n}</span>`).join("");
+      }
+
+      function renderSampleChips() {
+        els.sampleChips.innerHTML = SAMPLES.map((s) => {
+          const sz = s.id === "dir" ? "dir" : formatBytes(byteLen(s.data));
+          return `<button class="chip" data-id="${s.id}" aria-pressed="${s.on}" title="${esc(s.path)}">
+            <span class="ico"></span>${esc(s.path)}<span class="sz">${sz}</span></button>`;
+        }).join("");
+        $$("#sample-chips .chip").forEach((c) => c.addEventListener("click", () => {
+          const s = SAMPLES.find((x) => x.id === c.dataset.id);
+          s.on = !s.on;
+          c.setAttribute("aria-pressed", String(s.on));
+          renderCommentEditor();
+        }));
+      }
+
+      function renderUserChips() {
+        if (!state.userFiles.length) {
+          els.userChips.innerHTML = `<span class="chips-empty">No dropped files yet — they'll appear here as toggleable chips.</span>`;
+          return;
+        }
+        // Cap visible chips to keep DOM size manageable with large drops.
+        const CHIP_LIMIT = 200;
+        const shown = state.userFiles.slice(0, CHIP_LIMIT);
+        const overflow = state.userFiles.length - shown.length;
+        const frag = document.createDocumentFragment();
+        const tmp = document.createElement("div");
+        tmp.innerHTML = shown.map((u) =>
+          `<button class="chip user" data-id="${u.id}" aria-pressed="${u.on}" title="${esc(filePath(u.file))}">
+            <span class="ico"></span>${esc(filePath(u.file))}<span class="sz">${formatBytes(u.file.size)}</span>
+            <span class="x" data-id="${u.id}" role="button" aria-label="Remove" title="Remove">&times;</span>
+          </button>`).join("");
+        while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+        if (overflow > 0) {
+          const more = document.createElement("span");
+          more.className = "chips-empty";
+          more.textContent = `…and ${overflow} more file${overflow === 1 ? "" : "s"} (all included)`;
+          frag.appendChild(more);
+        }
+        els.userChips.innerHTML = "";
+        els.userChips.appendChild(frag);
+        $$("#user-chips .chip").forEach((c) => c.addEventListener("click", (ev) => {
+          if (ev.target.closest(".x")) return;               // handled below
+          const u = state.userFiles.find((x) => x.id === c.dataset.id);
+          u.on = !u.on;
+          c.setAttribute("aria-pressed", String(u.on));
+          renderCommentEditor();
+        }));
+        $$("#user-chips .x").forEach((x) => x.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          state.userFiles = state.userFiles.filter((u) => u.id !== x.dataset.id);
+          renderUserChips(); renderCommentEditor(); updateQueueHint();
+        }));
+      }
+
+      function updateQueueHint() {
+        const on = state.userFiles.filter((u) => u.on);
+        if (!state.userFiles.length) { els.dropCount.textContent = "Folders preserve their paths."; return; }
+        const total = on.reduce((s, u) => s + u.file.size, 0);
+        els.dropCount.textContent = `${on.length}/${state.userFiles.length} selected · ${formatBytes(total)} queued`;
+      }
+
+      // entries currently destined for the archive, for the comment editor
+      function queuedForComments() {
+        const rows = [];
+        for (const s of SAMPLES) if (s.on && s.id !== "dir") rows.push({
+          key: "s:" + s.id, path: s.path,
+          kind: s.id === "dir" ? "dir" : (s.method === "store" ? "store" : "file"),
+          get: () => s.meta.comment || "", set: (v) => { s.meta.comment = v; }
+        });
+        for (const u of state.userFiles) if (u.on && !filePath(u.file).endsWith("/")) rows.push({
+          key: "u:" + u.id, path: filePath(u.file), kind: "user",
+          get: () => u.comment || "", set: (v) => { u.comment = v; }
+        });
+        return rows;
+      }
+
+      function renderCommentEditor() {
+        const rows = queuedForComments();
+        if (!rows.length) { els.cmList.innerHTML = `<div class="cm-empty">Select entries above to give each one a comment.</div>`; return; }
+        // Cap rendered rows; per-entry comments are impractical at large counts.
+        const ROW_LIMIT = 100;
+        const shown = rows.slice(0, ROW_LIMIT);
+        const overflow = rows.length - shown.length;
+        const frag = document.createDocumentFragment();
+        const tmp = document.createElement("div");
+        tmp.innerHTML = shown.map((r) =>
+          `<div class="cm-row" data-key="${r.key}">
+            <span class="cm-path" title="${esc(r.path)}"><span class="cd ${r.kind === "dir" ? "dir" : r.kind === "store" ? "store" : r.kind === "user" ? "user" : ""}"></span>${esc(r.path)}</span>
+            <input type="text" value="${esc(r.get())}" placeholder="entry comment…" />
+          </div>`).join("");
+        while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+        if (overflow > 0) {
+          const note = document.createElement("div");
+          note.className = "cm-empty";
+          note.textContent = `…${overflow} more entr${overflow === 1 ? "y" : "ies"} not shown (no per-entry comments for large queues).`;
+          frag.appendChild(note);
+        }
+        els.cmList.innerHTML = "";
+        els.cmList.appendChild(frag);
+        $$("#cm-list .cm-row").forEach((row) => {
+          const r = rows.find((x) => x.key === row.dataset.key);
+          row.querySelector("input").addEventListener("input", (e) => r.set(e.target.value));
+        });
+      }
+
+      function onUserFiles(files) {
+        if (!files.length) return;
+        for (const f of files) state.userFiles.push({ id: "u" + (state.uid++), file: f, on: true, comment: "" });
+        // Give immediate feedback so the UI doesn't feel frozen, then do the
+        // heavy DOM work (chips + comment editor) after the browser can repaint.
+        log("queue", `${files.length} file(s) added to the ZipWriter.add queue`);
+        toast(`${files.length} file(s) queued — toggle or remove them via the chips.`);
+        scheduleAfterPaint(() => { renderUserChips(); renderCommentEditor(); updateQueueHint(); });
+      }
+
+      function bindTabs() {
+        $$(".tab").forEach((tab) => tab.addEventListener("click", () => {
+          selectTab(tab.dataset.station);
+        }));
+      }
+
+      // Schedule work after the browser has had a chance to paint.
+      function scheduleAfterPaint(fn) {
+        if (typeof scheduler !== "undefined" && scheduler.postTask) {
+          scheduler.postTask(fn, { priority: "background" });
+        } else if (typeof requestIdleCallback !== "undefined") {
+          requestIdleCallback(fn, { timeout: 200 });
+        } else {
+          setTimeout(fn, 0);
+        }
+      }
+
+      function bindDrop(zone, input, handler) {
+        input.addEventListener("change", () => handler(Array.from(input.files || [])));
+        // dragenter: set active immediately for visual responsiveness
+        zone.addEventListener("dragenter", (ev) => { ev.preventDefault(); zone.classList.add("hot"); });
+        // dragover: throttle to one classList write per animation frame
+        let _dragPending = false;
+        zone.addEventListener("dragover", (ev) => {
+          ev.preventDefault();
+          if (!_dragPending) {
+            _dragPending = true;
+            requestAnimationFrame(() => { zone.classList.add("hot"); _dragPending = false; });
+          }
+        });
+        ["dragleave", "drop"].forEach((e) => zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.classList.remove("hot"); }));
+        zone.addEventListener("drop", async (ev) => {
+          ev.preventDefault();
+          zone.classList.remove("hot");
+          handler(await droppedFiles(ev.dataTransfer));
+        });
+      }
+
+      async function droppedFiles(dataTransfer) {
+        const items = Array.from(dataTransfer?.items || []);
+        const entries = items
+          .map((item) => typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null)
+          .filter(Boolean);
+        if (!entries.length) return Array.from(dataTransfer?.files || []);
+
+        const files = [];
+        for (const entry of entries) await collectEntryFiles(entry, "", files);
+        return files.length ? files : Array.from(dataTransfer?.files || []);
+      }
+
+      async function collectEntryFiles(entry, prefix, files) {
+        if (entry.isFile) {
+          const file = await entryFile(entry);
+          setRelativePath(file, prefix + file.name);
+          files.push(file);
+          return;
+        }
+        if (!entry.isDirectory) return;
+
+        const dirPrefix = prefix + entry.name + "/";
+        const reader = entry.createReader();
+        while (true) {
+          const batch = await readDirectoryBatch(reader);
+          if (!batch.length) break;
+          for (const child of batch) await collectEntryFiles(child, dirPrefix, files);
+        }
+      }
+
+      function entryFile(entry) {
+        return new Promise((resolve, reject) => entry.file(resolve, reject));
+      }
+
+      function readDirectoryBatch(reader) {
+        return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      }
+
+      function setRelativePath(file, path) {
+        try {
+          Object.defineProperty(file, "_relativePath", { value: path, configurable: true });
+        } catch (_) {
+          file._relativePath = path;
+        }
+      }
+
+      function onZipFiles(files) {
+        const zip = files.find((f) => f.name.toLowerCase().endsWith(".zip")) || files[0];
+        if (zip) { state.archiveName = zip.name; inspect(zip); }
+      }
+
+      // ------------------------------------------------------------- FORGE
+      async function buildZip() {
+        setBusy(els.btnBuild, true);
+        els.btnCancel.disabled = false;
+        setRing(0);
+        vizHot("workflow-perform-tile", true); vizHot("workflow-scale-tile", true);
+        setVizState("forging");
+        runPackets(true);
+        const abort = new AbortController();
+        state.abort = abort;
+
+        const out = radio("out");
+        const queued = [];
+        let est = 0;
+
+        // assemble the entry list first so we can size the progress ring
+        for (const s of SAMPLES) if (s.on) queued.push({ path: s.path, data: s.data, method: s.method, meta: s.meta });
+        for (const u of state.userFiles) if (u.on) queued.push({
+          path: filePath(u.file), data: u.file,
+          method: shouldStore(u.file.name) ? "store" : "deflate",
+          meta: { modifiedAt: new Date(u.file.lastModified || Date.now()), comment: u.comment || undefined }
+        });
+        if (!queued.length) { setBusy(els.btnBuild, false, "Forge ZIP"); els.btnCancel.disabled = true; els.buildPhase.textContent = "Select at least one entry to forge."; toast("Pick a sample or drop a file first."); runPackets(false); vizHot("workflow-perform-tile", false); vizHot("workflow-scale-tile", false); setVizState("idle"); return; }
+        const duplicated = firstDuplicateWritePath(queued);
+        if (duplicated) { setBusy(els.btnBuild, false, "Forge ZIP"); els.btnCancel.disabled = true; els.buildPhase.textContent = `Duplicate entry path refused: ${duplicated}`; toast("Remove or rename the duplicate entry before forging."); runPackets(false); vizHot("workflow-perform-tile", false); vizHot("workflow-scale-tile", false); setVizState("idle"); return; }
+        est = queued.reduce((sum, e) => sum + byteLen(e.data) + (e.data instanceof Blob ? e.data.size : 0), 0);
+        state.originalBytes = est;
+        const totalEntries = queued.length;
+
+        try {
+          const writer = new ZipWriter({
+            level: Number(els.level.value),
+            zip64: radio("zip64"),
+            outputAs: out,
+            mimeType: "application/zip",
+            comment: state.archiveComment || "",
+            signal: abort.signal,
+            onProgress(p) {
+              if (p.phase === "write" && p.entries) setRing(p.entries / totalEntries);
+              els.buildPhase.innerHTML = `<b>${p.phase}</b> ${esc(p.path || "")}`;
+            }
+          });
+
+          log("ZipWriter", `new · level ${els.level.value} · zip64 ${radio("zip64")} · outputAs ${out}`);
+          for (const e of queued) await writer.add(e);
+          const closed = await writer.close();
+          setRing(1);
+
+          const blob = await normalize(closed, out);
+          state.downloadBlob = blob;
+          state.archive = blob;
+          state.archiveName = makeName();
+          els.btnDownload.disabled = false;
+          els.btnScan.disabled = false;
+
+          log("writer.close", `${out} → Blob · ${formatBytes(blob.size)}`);
+          els.buildPhase.innerHTML = `<b>done</b> · ${formatBytes(blob.size)} via outputAs:${out}`;
+          await inspect(blob, true);
+          renderCompressionBars();
+          toast("Archive forged and opened in Inspect.");
+        } catch (err) {
+          if (err?.name === "AbortError") { els.buildPhase.textContent = "Cancelled by AbortSignal."; log("abort", "ZipWriter cancelled", true); }
+          else fail(err);
+          setRing(0);
+        } finally {
+          setBusy(els.btnBuild, false, "Forge ZIP");
+          els.btnCancel.disabled = true;
+          state.abort = null;
+          vizHot("workflow-perform-tile", false); vizHot("workflow-scale-tile", false);
+          setVizState(state.reader ? `${state.reader.entries.length} entries` : "idle");
+          runPackets(false);
+        }
+      }
+
+      async function renderCompressionBars() {
+        if (!state.reader) return;
+        const all = state.reader.entries.filter((e) => !e.isDirectory);
+        const CAP = 300;
+        const items = all.slice(0, CAP);
+        const maxOrig = maxOf(items, (e) => e.size);
+        els.cbars.innerHTML = items.map((e) => {
+          const isStore = e.compressedSize === e.size;        // stored entries match exactly
+          const saved = e.size ? (1 - e.compressedSize / e.size) * 100 : 0;
+          const compW = e.size ? Math.max(2, (e.compressedSize / maxOrig) * 100) : 2;
+          const pct = isStore ? "stored" : (saved > 0 ? "−" + saved.toFixed(0) + "%" : "0%");
+          return `<div class="cbar">
+            <span class="nm">${esc(e.path)}<span class="badge ${isStore ? "store" : ""}">${isStore ? "store" : "deflate"}</span></span>
+            <span class="track"><span class="orig" style="width:${(e.size / maxOrig) * 100}%"></span><span class="comp" data-w="${compW}"></span></span>
+            <span class="pct ${isStore ? "store" : ""}">${pct}</span>
+          </div>`;
+        }).join("") || `<div class="empty">No file entries to compress.</div>`;
+        if (all.length > CAP) els.cbars.innerHTML += `<div class="empty" style="padding:14px">+ ${all.length - CAP} more file entries not charted</div>`;
+        // animate widths after paint
+        requestAnimationFrame(() => $$("#cbars .comp").forEach((c) => { c.style.width = c.dataset.w + "%"; }));
+      }
+
+      function download() {
+        if (!state.downloadBlob) return;
+        const url = URL.createObjectURL(state.downloadBlob);
+        const a = document.createElement("a");
+        a.href = url; a.download = state.archiveName; a.click();
+        URL.revokeObjectURL(url);
+        log("download", state.archiveName);
+        toast("Download started.");
+      }
+
+      // ------------------------------------------------------------ INSPECT
+      async function inspect(archive, switchTab = false) {
+        if (!archive) return;
+        await closeReader();
+        state.archive = archive;
+        try {
+          const source = els.readerSource.value === "arraybuffer" && archive instanceof Blob
+            ? await archive.arrayBuffer() : archive;
+          state.reader = await openZip(source, {
+            pathMode: els.pathMode.value,
+            onProgress(p) { if (p.phase === "parse" && p.entries) setVizState("parsing " + p.entries); }
+          });
+          state.selected = -1;
+          els.btnScan.disabled = false;
+          vizHot("workflow-inspect-defend-tile", true); setTimeout(() => vizHot("workflow-inspect-defend-tile", false), 700);
+          log("openZip", `${state.reader.entries.length} entries · pathMode ${els.pathMode.value} · ${els.readerSource.value}`);
+          renderEntries();
+          renderRibbon();
+          updateStats();
+          if (switchTab) selectTab("inspect");
+        } catch (err) { fail(err); renderEntriesError(err); }
+      }
+
+      async function reopen() { if (state.archive) await inspect(state.archive); }
+
+      async function closeReader() {
+        if (state.reader) { await state.reader.close(); state.reader = null; }
+      }
+
+      // ---- virtualized entry list — keeps the DOM tiny no matter how many entries ----
+      const ROW_STRIDE = 46, ROW_VIEW_MAX = 460, ROW_BUFFER = 6;
+      const ENTRY_DIR_ICON = `<svg viewBox="0 0 24 24" fill="none"><path d="M3 7h6l2 2h10v9H3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+      const ENTRY_FILE_ICON = `<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+
+      // max without spreading a huge array into Math.max (which overflows the call stack)
+      function maxOf(arr, fn) { let m = 1; for (let i = 0; i < arr.length; i++) { const v = fn(arr[i]); if (v > m) m = v; } return m; }
+
+      function setEntriesEmpty(msg, color) {
+        els.entries.classList.remove("virtual");
+        els.entries.style.height = "";
+        els.entries.onscroll = null;
+        state.entriesPaint = null;
+        els.entries.innerHTML = `<div class="empty"${color ? ` style="color:${color}"` : ""}>${msg}</div>`;
+      }
+
+      function updateEntryCount(shown, total) {
+        if (!total) { els.entriesCount.textContent = "0"; return; }
+        els.entriesCount.textContent = shown === total
+          ? `${total} ${total === 1 ? "entry" : "entries"}`
+          : `${shown} / ${total}`;
+      }
+
+      function buildEntryView() {
+        const r = state.reader;
+        const q = (state.entryFilter || "").trim().toLowerCase();
+        const v = [];
+        for (let i = 0; i < r.entries.length; i++) {
+          if (!q || r.entries[i].path.toLowerCase().includes(q)) v.push(i);
+        }
+        state.view = v;
+      }
+
+      function renderEntries() {
+        const r = state.reader;
+        if (!r) { setEntriesEmpty("No archive open."); updateEntryCount(0, 0); return; }
+        if (!r.entries.length) { setEntriesEmpty("Archive has 0 entries."); updateEntryCount(0, 0); return; }
+
+        state.maxC = maxOf(r.entries, (e) => e.compressedSize || 0);
+        buildEntryView();
+        updateEntryCount(state.view.length, r.entries.length);
+        if (!state.view.length) { setEntriesEmpty("No entries match the filter."); return; }
+
+        els.entries.classList.add("virtual");
+        els.entries.innerHTML = `<div class="evp"><div class="erows"></div></div>`;
+        const vp = els.entries.querySelector(".evp");
+        const rows = els.entries.querySelector(".erows");
+        const total = state.view.length * ROW_STRIDE;
+        vp.style.height = total + "px";
+        els.entries.style.height = Math.min(total, ROW_VIEW_MAX) + "px";
+
+        let raf = 0;
+        const paint = () => {
+          raf = 0;
+          const top = els.entries.scrollTop;
+          const h = els.entries.clientHeight || ROW_VIEW_MAX;
+          let first = Math.floor(top / ROW_STRIDE) - ROW_BUFFER;
+          let last = Math.ceil((top + h) / ROW_STRIDE) + ROW_BUFFER;
+          if (first < 0) first = 0;
+          if (last > state.view.length) last = state.view.length;
+          let html = "";
+          for (let k = first; k < last; k++) {
+            const i = state.view[k];
+            const e = r.entries[i];
+            const w = Math.max(3, ((e.compressedSize || 0) / state.maxC) * 100);
+            const icon = e.isDirectory ? ENTRY_DIR_ICON : ENTRY_FILE_ICON;
+            html += `<div class="erow ${i === state.selected ? "sel" : ""}" data-i="${i}" style="top:${k * ROW_STRIDE}px">
+              <span class="ei ${e.isDirectory ? "dir" : ""}">${icon}</span>
+              <span class="ep" title="${esc(e.path)}">${esc(e.path)}</span>
+              <span class="ebar"><i style="width:${e.isDirectory ? 0 : w}%"></i></span>
+              <span class="emeta">${e.isDirectory ? "dir" : formatBytes(e.size)} · ${crcHex(e.crc32)}</span>
+            </div>`;
+          }
+          rows.innerHTML = html;
+        };
+        state.entriesPaint = paint;
+        els.entries.onscroll = () => { if (!raf) raf = requestAnimationFrame(paint); };
+        els.entries.scrollTop = 0;
+        paint();
+      }
+
+      function renderEntriesError(err) {
+        setEntriesEmpty(`${esc(err.name || "Error")} · ${esc(err.message)}`, "var(--coral)");
+        updateEntryCount(0, 0);
+        els.ribbon.style.display = "none"; els.ribbonKey.style.display = "none";
+        els.tabEntries.textContent = "0";
+      }
+
+      function renderRibbon() {
+        const r = state.reader;
+        if (!r || !r.entries.length) { els.ribbon.style.display = "none"; els.ribbonKey.style.display = "none"; return; }
+        els.ribbon.style.display = "flex"; els.ribbonKey.style.display = "flex";
+        const entries = r.entries;
+        const MAX_SEGS = 80;
+        let segs = "";
+        if (entries.length <= MAX_SEGS) {
+          for (let i = 0; i < entries.length; i++) {
+            const e = entries[i];
+            const flex = Math.max(1, e.compressedSize || 0) + 30; // + header estimate
+            const color = e.isDirectory ? "var(--faint)" : (e.compressedSize === e.size ? "var(--amber)" : "var(--cyan)");
+            segs += `<span class="seg-b" style="flex:${flex};background:${color};animation-delay:${i * 40}ms" title="${esc(e.path)}"></span>`;
+          }
+        } else {
+          // too many entries to draw one-per-segment — aggregate into contiguous buckets
+          const per = entries.length / MAX_SEGS;
+          for (let b = 0; b < MAX_SEGS; b++) {
+            const start = Math.floor(b * per), end = Math.floor((b + 1) * per);
+            let flex = 0, anyFile = false, anyDeflate = false;
+            for (let i = start; i < end; i++) {
+              const e = entries[i];
+              flex += Math.max(1, e.compressedSize || 0) + 30;
+              if (!e.isDirectory) { anyFile = true; if (e.compressedSize !== e.size) anyDeflate = true; }
+            }
+            const color = !anyFile ? "var(--faint)" : (anyDeflate ? "var(--cyan)" : "var(--amber)");
+            segs += `<span class="seg-b" style="flex:${Math.max(1, flex)};background:${color};animation-delay:${b * 20}ms" title="${end - start} entries"></span>`;
+          }
+        }
+        const cd = 46 * Math.min(entries.length, 2000); // central directory estimate (clamped)
+        els.ribbon.innerHTML = segs + `<span class="seg-b" style="flex:${cd};background:var(--lime)" title="Central directory + EOCD"></span>`;
+      }
+
+      async function preview(i) {
+        const r = state.reader; if (!r) return;
+        const e = r.entries[i];
+        state.selected = i; if (state.entriesPaint) state.entriesPaint(); else renderEntries();
+        if (e.isDirectory) { els.preview.innerHTML = `<span class="hl-c">${esc(e.path)}</span>\n\nDirectory entry · unixMode ${octal(e.unixMode)}\nNo payload.`; return; }
+        try {
+          const text = await e.text();
+          const b = await e.bytes();
+          const ab = await e.arrayBuffer();
+          const latest = r.get(e.path);
+          const dupNote = latest === e ? "reader.get() target for this path" : "reader.get() returns a later duplicate";
+          log("entry.read", `${e.path} · text/bytes/arrayBuffer`);
+          els.preview.innerHTML =
+            `<span class="hl-c">${esc(e.path)}</span>  <span style="color:var(--faint)">(${dupNote})</span>\n` +
+            `<span class="hl">text()</span> ${b.byteLength} chars · <span class="hl">bytes()</span> ${b.byteLength} B · <span class="hl">arrayBuffer()</span> ${ab.byteLength} B\n` +
+            `crc32 <span class="hl">${crcHex(e.crc32)}</span> · size ${formatBytes(e.size)} → ${formatBytes(e.compressedSize)} · mode ${octal(e.unixMode)}\n` +
+            (e.comment ? `comment "${esc(e.comment)}"\n` : "") +
+            `${"─".repeat(40)}\n${esc(textPreview(text, isBinary(b)))}`;
+        } catch (err) { fail(err); els.preview.innerHTML = `<span style="color:var(--coral)">${esc(err.name)} · ${esc(err.message)}</span>`; }
+      }
+
+      // ------------------------------------------------------------- STREAM
+      const STREAM_INPUTS = [
+        { path: "stream/readme.txt", data: "Streaming keeps memory flat — JSZipp emits ZIP bytes while you are still feeding entries in.\n".repeat(5), method: "deflate" },
+        { path: "stream/data.json", data: JSON.stringify({ streamed: true, buffered: false, note: "bytes leave .readable as each entry is written" }, null, 2), method: "deflate" },
+        { path: "stream/log.txt", data: "event: chunk emitted\n".repeat(180), method: "deflate" },
+        { path: "stream/raw.bin", data: (() => { const a = new Uint8Array(1536); for (let i = 0; i < a.length; i++) a[i] = (i * 31 + 7) & 0xff; return a; })(), method: "store" }
+      ];
+
+      function renderStreamInputs() {
+        els.sledIn.innerHTML = STREAM_INPUTS.map((e, i) =>
+          `<div class="sin" id="sin-${i}">
+            <span class="dot2"></span>
+            <span class="nm2">${esc(e.path)}</span>
+            <span class="mtag ${e.method === "store" ? "store" : ""}">${e.method || "deflate"}</span>
+            <span class="sz2">${formatBytes(byteLen(e.data))}</span>
+          </div>`).join("");
+      }
+      function markStreamInput(i, cls) {
+        const el = $("#sin-" + i); if (!el) return;
+        el.classList.remove("writing", "done");
+        if (cls) el.classList.add(cls);
+      }
+      function appendChunk(k, n, total) {
+        if (els.chunks.querySelector(".empty")) els.chunks.innerHTML = "";
+        const row = document.createElement("div");
+        row.className = "ck";
+        row.innerHTML = `<span class="kn">chunk #${k}</span><span class="kb">+${formatBytes(n)}</span><span class="kt">Σ ${formatBytes(total)}</span>`;
+        els.chunks.appendChild(row);
+        els.chunks.scrollTop = els.chunks.scrollHeight;
+      }
+
+      async function runTransform() {
+        setBusy(els.btnTransform, true);
+        setVizState("streaming"); vizHot("workflow-perform-tile", true); runPackets(true);
+        els.sGap.classList.add("flowing");
+        renderStreamInputs();
+        els.chunks.innerHTML = `<div class="empty">waiting for first chunk…</div>`;
+        els.bytesOut.textContent = "0 B"; els.streamBar.style.width = "0%";
+        const est = STREAM_INPUTS.reduce((s, e) => s + byteLen(e.data), 0) * 0.6 + 400;
+        let total = 0, k = 0;
+        try {
+          const t = new ZipTransformStream({ level: Number(els.level.value), zip64: radio("zip64") });
+          const reader = t.readable.getReader();
+          const parts = [];
+          // drain .readable concurrently so bytes surface live, before writing finishes
+          const drain = (async () => {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              parts.push(value);
+              k++; total += value.byteLength;
+              els.bytesOut.textContent = formatBytes(total);
+              els.streamBar.style.width = Math.min(98, (total / est) * 100) + "%";
+              appendChunk(k, value.byteLength, total);
+            }
+          })();
+
+          const w = t.writable.getWriter();
+          log("ZipTransformStream", "new · draining .readable while .writable is still open");
+          for (let i = 0; i < STREAM_INPUTS.length; i++) {
+            markStreamInput(i, "writing");
+            await w.write(STREAM_INPUTS[i]);
+            await sleep(420);
+            markStreamInput(i, "done");
+          }
+          await w.close();
+          await drain;
+
+          const blob = new Blob(parts, { type: "application/zip" });
+          state.archive = blob; state.downloadBlob = blob; state.archiveName = "jszipp-stream.zip";
+          els.btnScan.disabled = false; els.btnDownload.disabled = false;
+          els.streamBar.style.width = "100%";
+          log("pipeline", `${k} chunk(s) · ${formatBytes(total)} streamed out of .readable`);
+          await inspect(blob);
+          toast(`Streamed ${k} chunks → ${formatBytes(total)}. Now scan it →`);
+        } catch (err) { fail(err); }
+        finally {
+          setBusy(els.btnTransform, false, "Run streaming build");
+          els.sGap.classList.remove("flowing");
+          vizHot("workflow-perform-tile", false); runPackets(false);
+          setVizState(state.reader ? `${state.reader.entries.length} entries` : "idle");
+        }
+      }
+
+      async function scanArchive() {
+        if (!state.archive) return;
+        setBusy(els.btnScan, true);
+        els.yielded.innerHTML = "";
+        vizHot("workflow-inspect-defend-tile", true); setVizState("iterating");
+        try {
+          let n = 0;
+          for await (const entry of readZipStream(state.archive.stream(), { pathMode: els.pathMode.value })) {
+            n++;
+            let label, klass, detail, snippet = "";
+            if (entry.isDirectory) { await entry.skip(); label = "skip"; klass = "skip"; detail = "directory"; }
+            else if (/\.(txt|json|md|sh|csv|xml|html|js|ts)$/i.test(entry.path)) {
+              const text = await entry.text();
+              label = "read"; klass = "read"; detail = `${text.length} chars`;
+              snippet = text.replace(/\s+/g, " ").trim().slice(0, 80);
+            } else { await entry.skip(); label = "skip"; klass = "skip"; detail = "binary"; }
+            appendYield(entry.path, label, klass, detail, snippet);
+            await sleep(220);
+          }
+          log("readZipStream", `${n} single-use entry token(s) consumed forward-only`);
+          toast(`Iterated ${n} entries forward-only.`);
+        } catch (err) { fail(err); }
+        finally {
+          setBusy(els.btnScan, false, "Scan current archive");
+          vizHot("workflow-inspect-defend-tile", false);
+          setVizState(state.reader ? `${state.reader.entries.length} entries` : "idle");
+        }
+      }
+
+      function appendYield(path, label, klass, detail, snippet) {
+        if (els.yielded.querySelector(".empty")) els.yielded.innerHTML = "";
+        const icon = klass === "read"
+          ? `<svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 10h16M4 15h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
+          : `<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+        const node = document.createElement("div");
+        node.className = "yi";
+        node.innerHTML =
+          `<span class="yic ${klass}">${icon}</span>
+           <span class="ytext"><span class="yp">${esc(path)}</span>${snippet ? `<span class="ysnip">“${esc(snippet)}${snippet.length >= 80 ? "…" : ""}”</span>` : `<span class="ysnip">${esc(detail)} · skipped via entry.skip()</span>`}</span>
+           <span class="yv ${klass}">${label === "read" ? "text()" : "skip()"}</span>`;
+        els.yielded.appendChild(node);
+        els.yielded.scrollTop = els.yielded.scrollHeight;
+      }
+
+      // ------------------------------------------------------------- SHIELD
+      const ATTACKS = [
+        {
+          id: "slip", title: "Zip Slip traversal", guard: 'pathMode: "strict"',
+          desc: 'An entry named <code>../evil.txt</code> tries to escape the extraction folder.',
+          threat: 'Crafted a real archive whose entry path is <b>../evil.txt</b> — on a naïve extractor it would write outside the target directory.',
+          run: async () => {
+            const w = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
+            await w.add({ path: "xx/evil.txt", data: "payload" });
+            const bytes = patchPath(await w.close(), "xx/evil.txt", "../evil.txt");
+            let strict;
+            try { await openZip(bytes, { pathMode: "strict" }); strict = null; }
+            catch (e) { strict = e; }
+            const san = await openZip(bytes, { pathMode: "sanitize" });
+            const recovered = san.entries[0]?.path; await san.close();
+            log("openZip", `strict rejected ../evil.txt · ${strict?.name}`, !strict);
+            return [
+              ["block", "strict", `${strict?.name || "—"} · the traversal path is refused`],
+              ["note", "sanitize", `recovered as <b>${esc(recovered)}</b> inside the root`]
+            ];
+          }
+        },
+        {
+          id: "dup", title: "Collision package", guard: 'pathMode: "strict-package"',
+          desc: 'Two entries share <code>dup-x.txt</code> — a parser-differential trap.',
+          threat: 'Built an archive with <b>two</b> entries both named <b>dup-x.txt</b>. Different tools disagree on which one wins — a classic smuggling vector.',
+          run: async () => {
+            const w = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
+            await w.add({ path: "dup-1.txt", data: "first copy" });
+            await w.add({ path: "dup-2.txt", data: "second copy" });
+            let bytes = patchPath(await w.close(), "dup-1.txt", "dup-x.txt");
+            bytes = patchPath(bytes, "dup-2.txt", "dup-x.txt");
+            const lenient = await openZip(bytes); const kept = lenient.entries.length; await lenient.close();
+            let pkg; try { await openZip(bytes, { pathMode: "strict-package" }); pkg = null; } catch (e) { pkg = e; }
+            log("openZip", `strict-package rejected duplicate · ${pkg?.name}`, !pkg);
+            return [
+              ["allow", "default", `preserves both — <b>${kept}</b> entries; JSZipp get() returns the later one`],
+              ["block", "strict-package", `${pkg?.name || "—"} · the collision is refused`]
+            ];
+          }
+        },
+        {
+          id: "bomb", title: "Archive bomb", guard: "maxArchiveSize",
+          desc: 'A 2&nbsp;MB entry hides inside ~2&nbsp;KB. <code>maxArchiveSize</code> caps the input.',
+          threat: 'Compressed <b>2&nbsp;MB</b> of zeros down to a few KB. Opened blindly, it can balloon memory back to its full expanded size.',
+          run: async () => {
+            const big = new Uint8Array(2 * 1024 * 1024);
+            const w = new ZipWriter({ level: 9, zip64: "off", outputAs: "uint8array" });
+            await w.add({ path: "bomb.bin", data: big, method: "deflate" });
+            const bytes = await w.close();
+            let capped; try { await openZip(bytes, { maxArchiveSize: 1024 }); capped = null; } catch (e) { capped = e; }
+            log("openZip", `maxArchiveSize rejected ${formatBytes(bytes.length)} · ${capped?.name}`, !capped);
+            return [
+              ["note", "compressed", `${formatBytes(bytes.length)} on disk, ${formatBytes(big.length)} when expanded`],
+              ["block", "maxArchiveSize: 1KB", `${capped?.name || "—"} · refused before inflating`]
+            ];
+          }
+        },
+        {
+          id: "entry", title: "Lying header", guard: "maxEntrySize",
+          desc: 'An entry expands far past its cap. <code>maxEntrySize</code> is enforced mid&#8209;inflate.',
+          threat: 'A single entry inflates far beyond any sane size. The header looks innocent — the lie only shows up while decompressing.',
+          run: async () => {
+            const big = new Uint8Array(2 * 1024 * 1024);
+            const w = new ZipWriter({ level: 9, zip64: "off", outputAs: "uint8array" });
+            await w.add({ path: "huge.bin", data: big, method: "deflate" });
+            const bytes = await w.close();
+            const z = await openZip(bytes, { maxEntrySize: 4096 });
+            let stopped; try { await z.get("huge.bin").bytes(); stopped = null; } catch (e) { stopped = e; }
+            await z.close();
+            log("entry.bytes", `maxEntrySize stopped inflate · ${stopped?.name}`, !stopped);
+            return [
+              ["allow", "open", "header parsed — the lie isn't visible yet"],
+              ["block", "maxEntrySize: 4KB", `${stopped?.name || "—"} · inflate halted past the cap`]
+            ];
+          }
+        }
+      ];
+
+      function renderShields() {
+        els.shields.innerHTML = ATTACKS.map((a) => `
+          <div class="shield" id="shield-${a.id}">
+            <h4><span class="si"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>${esc(a.title)}<span class="guard-tag">${esc(a.guard)}</span></h4>
+            <p>${a.desc}</p>
+            <button class="action action-sec" data-id="${a.id}">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.6"/></svg>
+              Run attack
+            </button>
+            <div class="verdict" id="verdict-${a.id}"></div>
+          </div>`).join("");
+        $$("#shields .action").forEach((b) => b.addEventListener("click", () => runAttack(b.dataset.id, b)));
+      }
+
+      const blockedSet = new Set();
+      function updateTally() {
+        els.shieldTally.innerHTML = `<b>${blockedSet.size}</b> / ${ATTACKS.length} blocked`;
+      }
+
+      async function runAttack(id, btn) {
+        const attack = ATTACKS.find((a) => a.id === id);
+        const card = $("#shield-" + id);
+        const verdict = $("#verdict-" + id);
+        setBusy(btn, true);
+        card.classList.add("scanning");
+        verdict.classList.remove("show");
+        setVizState("defending");
+        try {
+          const lines = await attack.run();
+          const guarded = lines.find((l) => l[0] === "block");
+          const naive = lines.find((l) => l[0] !== "block") || ["note", "—", "—"];
+          const blocked = !!guarded;
+          card.classList.add("fired");
+          card.classList.toggle("safe", blocked);
+          if (blocked) blockedSet.add(id); updateTally();
+
+          const naiveBadge = naive[0] === "allow" ? "danger" : "note";
+          const naiveText = naive[0] === "allow" ? "ALLOWED" : "INFO";
+          verdict.innerHTML =
+            `<div class="threat-row"><span class="ti"><svg viewBox="0 0 24 24" width="15" height="15" fill="none"><path d="M12 3 2 20h20L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span>${attack.threat}</span></div>
+            <div class="lanes">
+              <div class="lane-card danger">
+                <div class="lc-head"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>without a guard</div>
+                <span class="lane-badge ${naiveBadge}">${naiveText}</span>
+                <div class="lc-body"><b>${esc(naive[1])}</b> — ${naive[2]}</div>
+              </div>
+              <div class="lane-card safe">
+                <div class="lc-head"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>JSZipp guard</div>
+                <span class="lane-badge safe">${blocked ? "BLOCKED" : "—"}</span>
+                <div class="lc-body"><b>${esc(guarded ? guarded[1] : attack.guard)}</b> — ${guarded ? guarded[2] : "no error raised"}</div>
+              </div>
+            </div>
+            ${blocked ? `<div class="outcome"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Guard held — the payload was refused.</div>` : ""}`;
+          verdict.classList.add("show");
+          toast(blocked ? "Attack blocked by JSZipp." : "Attack handled.");
+        } catch (err) { fail(err); }
+        finally {
+          setBusy(btn, false, "Run attack");
+          setTimeout(() => card.classList.remove("scanning"), 1000);
+          setVizState(state.reader ? `${state.reader.entries.length} entries` : "idle");
+        }
+      }
+
+      async function runAllAttacks() {
+        setBusy(els.btnRunall, true);
+        for (const a of ATTACKS) {
+          const btn = $(`#shields .action[data-id="${a.id}"]`);
+          await runAttack(a.id, btn);
+          await sleep(500);
+        }
+        setBusy(els.btnRunall, false, "Run all defenses");
+        toast(`Defense suite complete · ${blockedSet.size}/${ATTACKS.length} blocked.`);
+      }
+
+      // ------------------------------------------------------------- helpers
+      function updateStats() {
+        const r = state.reader;
+        const n = r ? r.entries.length : 0;
+        countTo(els.sEntries, n);
+        els.tabEntries.textContent = String(n);
+        if (els.zipCount) els.zipCount.textContent = `${n} entries`;
+        if (state.downloadBlob) els.sSize.textContent = formatBytes(state.downloadBlob.size);
+        else if (state.archive?.size) els.sSize.textContent = formatBytes(state.archive.size);
+        if (r && state.originalBytes && state.downloadBlob) {
+          const saved = Math.max(0, (1 - state.downloadBlob.size / state.originalBytes) * 100);
+          els.sRatio.textContent = saved.toFixed(0) + "%";
+          pulse(els.sRatio);
+        }
+        if (r && r.entries.length) {
+          const f = r.entries.find((e) => !e.isDirectory);
+          if (f) els.sCrc.textContent = crcHex(f.crc32);
+        }
+        pulse(els.sEntries);
+      }
+
+      function countTo(el, target) {
+        const start = Number(el.textContent.replace(/\D/g, "")) || 0;
+        if (start === target) { el.textContent = String(target); return; }
+        const steps = 16; let i = 0;
+        const tick = () => { i++; el.textContent = String(Math.round(start + (target - start) * (i / steps))); if (i < steps) requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }
+      function pulse(el) { el.classList.add("pulse"); setTimeout(() => el.classList.remove("pulse"), 600); }
+
+      function setRing(frac) {
+        const C = 138;
+        els.ringFg.style.strokeDashoffset = String(C - C * Math.min(1, Math.max(0, frac)));
+      }
+      function setVizState(t) { if (els.vizState) els.vizState.textContent = t; }
+      function vizHot(id, on) { $("#" + id)?.querySelector(".node-box")?.classList.toggle("hot", on); }
+      function runPackets() {}
+
+      function selectTab(name) {
+        $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.station === name));
+        $$(".station").forEach((s) => s.classList.remove("active"));
+        const station = $("#station-" + name);
+        station.classList.add("active");
+        setTimeout(() => scrollStationIntoView(station), 50);
+      }
+
+      function scrollStationIntoView(station) {
+        const header = $("#site-header")?.offsetHeight || 0;
+        const tabs = $("#lab-station-tabs")?.offsetHeight || 0;
+        const gap = 18;
+        const top = station.getBoundingClientRect().top + window.scrollY - header - tabs - gap;
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      }
+
+      async function normalize(value, out) {
+        if (out === "blob") return value;
+        if (out === "response") return value.blob();
+        if (out === "uint8array" || out === "arraybuffer") return new Blob([value], { type: "application/zip" });
+        return new Response(value).blob(); // stream
+      }
+
+      function patchPath(bytes, from, to) {
+        const out = new Uint8Array(bytes);
+        const f = enc.encode(from), t = enc.encode(to);
+        if (f.length !== t.length) throw new Error("patch needs equal lengths");
+        for (let o = 0; o <= out.length - f.length; o++) {
+          let m = true;
+          for (let i = 0; i < f.length; i++) if (out[o + i] !== f[i]) { m = false; break; }
+          if (m) out.set(t, o);
+        }
+        return out;
+      }
+
+      function writerPath(path) {
+        return path.replace(/\\/g, "/").replace(/^\/+/, "");
+      }
+      function firstDuplicateWritePath(entries) {
+        const seen = new Set();
+        for (const entry of entries) {
+          const path = writerPath(entry.path);
+          if (seen.has(path)) return path;
+          seen.add(path);
+        }
+        return "";
+      }
+
+      function setBusy(btn, busy, label) {
+        btn.disabled = busy;
+        if (busy) { btn.dataset.label = btn.textContent.trim(); btn.style.opacity = "0.6"; }
+        else { btn.style.opacity = ""; }
+      }
+
+      function radio(name) { return document.querySelector(`input[name="${name}"]:checked`).value; }
+      function filePath(f) { return f._relativePath || f.webkitRelativePath || f.name; }
+      function shouldStore(n) { return /\.(avif|gif|jpe?g|mp3|mp4|pdf|png|webm|webp|zip)$/i.test(n); }
+      function makeName() { return `jszipp-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.zip`; }
+      function byteLen(d) { if (typeof d === "string") return enc.encode(d).length; if (d instanceof Uint8Array) return d.length; if (d instanceof ArrayBuffer) return d.byteLength; return 0; }
+      function crcHex(c) { return "0x" + (c >>> 0).toString(16).padStart(8, "0"); }
+      function octal(m) { return m == null ? "—" : "0o" + m.toString(8).padStart(6, "0"); }
+      function isBinary(bytes) { const n = Math.min(bytes.length, 64); for (let i = 0; i < n; i++) { const b = bytes[i]; if (b === 0 || (b < 9)) return true; } return false; }
+      function textPreview(t, binary) {
+        if (binary) return "(binary payload — not shown as text)";
+        if (!t) return "(empty)";
+        return t.length > 2400 ? t.slice(0, 2400) + "\n… truncated" : t;
+      }
+      function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+      function formatBytes(b) {
+        if (b == null) return "—";
+        if (b < 1024) return b + " B";
+        const u = ["KB", "MB", "GB"]; let v = b / 1024, i = 0;
+        while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+        return v.toFixed(v >= 10 ? 1 : 2) + " " + u[i];
+      }
+
+      function esc(v) {
+        return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+      }
+
+      function log(api, msg, isErr = false) {
+        const t = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        const node = document.createElement("div");
+        node.className = "ln";
+        node.style.animationDelay = "0s";
+        node.innerHTML = `<span class="t">${t}</span><span class="api ${isErr ? "err" : ""}">${esc(api)}</span><span class="msg">${esc(msg)}</span>`;
+        els.log.prepend(node);
+        while (els.log.children.length > 40) els.log.lastElementChild.remove();
+      }
+
+      function fail(err) {
+        console.error(err);
+        const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        log("error", msg, true);
+        toast(msg);
+      }
+
+      function toast(msg) {
+        els.toast.textContent = msg;
+        els.toast.classList.add("show");
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => els.toast.classList.remove("show"), 3400);
+      }
+
+      init();
+    </script>
+  </body>
+</html>

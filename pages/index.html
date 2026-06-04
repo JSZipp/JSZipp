@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JSZipp documentation</title>
+    <meta
+      name="description"
+      content="Fast, compact, and defensive ZIP reader and writer for modern browser apps, with safe defaults, Web Streams, ZIP64, metadata, and unsafe-archive guards."
+    />
+    <link rel="icon" type="image/png" href="../assets/icon64.png" />
+    <link rel="stylesheet" href="common/site.css" />
+    <script defer src="common/site.js"></script>
+  </head>
+  <body data-page="home">
+    <header data-site-header></header>
+    <div class="layout">
+      <aside class="sidebar" data-site-sidebar></aside>
+      <main class="content">
+        <section class="hero">
+          <h1 class="hero-banner"><div class="hero-brand">JS<span class="hero-brand-color">Zipp</span><span class="hero-brand-sub"> - ZIPs in the modern browser</span></div><span class="accent hero-banner-message">Fast, compact, and defensive.</span></h1>
+          <p class="lede">
+            JSZipp gives web apps fast ZIP creation and inspection without pulling in a heavyweight
+            bundle. Work with large, modern ZIP64-scale archives and catch dangerous paths, zip bombs,
+            and malformed layouts before they reach your app.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="installation.html">Install</a>
+            <a class="btn btn-ghost" href="api.html">Read the API</a>
+            <a class="btn btn-ghost" href="../demo/index.html">Demo</a>
+            <a class="btn btn-ghost" href="../demo/library-benchmark.html">Benchmark</a>
+          </div>
+          <div class="tagline">
+            <span class="tag">safe reader defaults</span>
+            <span class="tag">Blob / Response / Stream output</span>
+            <span class="tag">ZIP64</span>
+            <span class="tag">no dependencies</span>
+          </div>
+        </section>
+
+        <section class="grid">
+          <article class="card">
+            <h3>Write archives</h3>
+            <p>Create browser-downloadable ZIP files with <code>ZipWriter</code>, choose compression level, preserve timestamps and comments, and return <code>Blob</code>, <code>Response</code>, <code>ReadableStream</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code>.</p>
+          </article>
+          <article class="card">
+            <h3>Read uploads</h3>
+            <p>Open user-selected files with <code>openZip()</code>, reject unsafe paths by default, cap archive and entry sizes, and read entries with <code>text()</code>, <code>bytes()</code>, <code>arrayBuffer()</code>, or <code>stream()</code>.</p>
+          </article>
+          <article class="card">
+            <h3>Use browser primitives</h3>
+            <p>JSZipp targets modern browser APIs: Web Streams, <a target="_blank" href="https://developer.mozilla.org/docs/Web/API/Blob"><code>Blob</code></a>, <a target="_blank" href="https://developer.mozilla.org/docs/Web/API/TextEncoder"><code>TextEncoder</code></a>, <a target="_blank" href="https://developer.mozilla.org/docs/Web/API/TextDecoder"><code>TextDecoder</code></a>, <a target="_blank" href="https://developer.mozilla.org/docs/Web/API/AbortSignal"><code>AbortSignal</code></a>, and <a target="_blank" href="https://developer.mozilla.org/docs/Web/API/DecompressionStream"><code>DecompressionStream</code></a> (platform decompression for deflated reads).</p>
+          </article>
+        </section>
+
+        <h2>Example</h2>
+        <pre><code>import { ZipWriter } from "jszipp";
+
+const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "Hello.txt", data: "Hello World\n" });
+
+const smileBytes = Uint8Array.from(atob(imgData), (char) =&gt; char.charCodeAt(0));
+await writer.add({ path: "images/smile.gif", data: smileBytes });
+
+const content = await writer.close();
+saveAs(content, "example.zip");</code></pre>
+
+        <h2>Getting help</h2>
+        <ul>
+          <li>Start with the <a href="faq.html">FAQ</a> for common usage and compatibility questions.</li>
+          <li>Use the <a href="api.html">API page</a> when you need method and option names.</li>
+          <li>Check <a href="examples.html">examples</a> for common browser workflows.</li>
+          <li>Report reproducible problems through the <a href="bug-tracker.html">bug tracker</a>.</li>
+        </ul>
+      </main>
+    </div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

@@ -1,0 +1,82 @@
+{
+  "name": "jszipp",
+  "version": "1.0.0",
+  "description": "Fast, compact, and defensive ZIP reader and writer for modern browser apps, with safe defaults, Web Streams, ZIP64, metadata, and unsafe-archive guards.",
+  "license": "MIT",
+  "private": false,
+  "packageManager": "pnpm@10.33.2",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://jszipp.github.io/jszipp",
+  "repository": "https://github.com/jszipp/jszipp",
+  "bugs": {
+    "email": "cyfung1031+jszipp@gmail.com",
+    "url": "https://github.com/jszipp/jszipp/issues"
+  },
+  "author": "CY Fung <cyfung1031+jszipp@gmail.com>",
+  "keywords": [
+    "zip",
+    "zip64",
+    "archive",
+    "compression",
+    "decompression",
+    "deflate",
+    "browser",
+    "web-streams",
+    "typescript",
+    "security"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "main": "./dist/jszipp.cjs",
+  "module": "./dist/jszipp.mjs",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/jszipp.umd.js",
+  "jsdelivr": "./dist/jszipp.umd.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/jszipp.mjs",
+      "require": "./dist/jszipp.cjs",
+      "default": "./dist/jszipp.mjs"
+    },
+    "./browser-legacy/cr61ff58": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/cr61ff58/jszipp.mjs",
+      "require": "./dist/cr61ff58/jszipp.cjs"
+    },
+    "./browser-legacy/cr86ff68": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/cr86ff68/jszipp.mjs",
+      "require": "./dist/cr86ff68/jszipp.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && rspack build && tsc -p tsconfig.types.json && node scripts/prune-dist-types.mjs",
+    "prepack": "pnpm run typecheck && pnpm run build && pnpm run test",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "pack:dry": "pnpm pack --dry-run"
+  },
+  "devDependencies": {
+    "@rspack/cli": "^2.0.5",
+    "@rspack/core": "^2.0.5",
+    "@types/node": "^25.9.1",
+    "@types/yauzl": "^2.10.3",
+    "@types/yazl": "^3.3.1",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.7",
+    "web-streams-polyfill": "^4.3.0",
+    "yauzl": "3.2.0",
+    "yazl": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

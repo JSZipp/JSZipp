@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Installation - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="installation">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Setup</span><h1>Installation</h1><p class="lede">Install JSZipp from npm and import only the browser ZIP APIs your app needs.</p></section>
+      <h2>Package manager</h2>
+      <pre><code>pnpm add jszipp
+npm install jszipp
+yarn add jszipp</code></pre>
+      <h2>Imports</h2>
+      <pre><code>import JSZipp, {
+  ZipWriter,
+  ZipTransformStream,
+  openZip,
+  readZipStream
+} from "jszipp";</code></pre>
+      <p><code>JSZipp</code> is the default namespace export. Named exports are usually clearer in application code and help bundlers keep unused code out of the final app.</p>
+      <h2>Runtime</h2>
+      <ul>
+        <li>ECMAScript 2019 output.</li>
+        <li>Modern browsers with <code>ReadableStream</code>, <code>TransformStream</code>, <code>Blob</code>, and <code>TextDecoder</code>.</li>
+        <li><code>DecompressionStream</code> is needed when reading deflated entries.</li>
+        <li>Node.js can run the tests, but the public API is designed around browser primitives.</li>
+      </ul>
+      <div class="callout"><strong>First step after install:</strong> use <code>ZipWriter</code> for creating archives and <code>openZip</code> for random-access reading of uploaded ZIP files.</div>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

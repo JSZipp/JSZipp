@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JSZipp Drop Compressor</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172026;
+        --muted: #5f6f7a;
+        --line: #d9e1e6;
+        --soft: #f4f8fa;
+        --panel: #ffffff;
+        --blue: #1769aa;
+        --teal: #087f83;
+        --green: #23764d;
+        --red: #b33a3a;
+        --shadow: 0 18px 48px rgba(32, 44, 54, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(23, 105, 170, 0.12), rgba(8, 127, 131, 0.08)),
+          #eef3f6;
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        line-height: 1.45;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .shell {
+        width: min(960px, calc(100vw - 28px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .brand,
+      .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 40px;
+        color: var(--ink);
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: var(--blue);
+        color: #fff;
+      }
+
+      .brand-mark svg,
+      .drop-icon svg {
+        width: 23px;
+        height: 23px;
+      }
+
+      .nav-link {
+        color: var(--blue);
+        font-size: 0.92rem;
+      }
+
+      .panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .header {
+        display: grid;
+        gap: 12px;
+        padding: clamp(22px, 5vw, 38px);
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1 {
+        max-width: 780px;
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 4rem);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .header p {
+        max-width: 680px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1rem;
+      }
+
+      .body {
+        display: grid;
+        gap: 18px;
+        padding: clamp(18px, 4vw, 28px);
+      }
+
+      .drop-zone {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 250px;
+        padding: 24px;
+        border: 2px dashed #b6c6d0;
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(23, 105, 170, 0.06), rgba(8, 127, 131, 0.08)),
+          #fff;
+        text-align: center;
+      }
+
+      .drop-zone.active {
+        border-color: var(--teal);
+        background:
+          linear-gradient(135deg, rgba(23, 105, 170, 0.12), rgba(8, 127, 131, 0.16)),
+          #fff;
+      }
+
+      .drop-content {
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+      }
+
+      .drop-icon {
+        display: grid;
+        place-items: center;
+        width: 58px;
+        height: 58px;
+        border-radius: 8px;
+        background: #e7f2f4;
+        color: var(--teal);
+      }
+
+      .drop-content strong {
+        font-size: 1.12rem;
+      }
+
+      .drop-content span {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr);
+        gap: 14px;
+        align-items: end;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field label {
+        color: #32414a;
+        font-size: 0.83rem;
+        font-weight: 800;
+      }
+
+      .field input {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 11px;
+      }
+
+      .field select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 11px;
+        background: #fff;
+        font: inherit;
+        color: inherit;
+      }
+
+      .segmented {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+      }
+
+      .segmented label {
+        display: grid;
+      }
+
+      .segmented input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .segmented span {
+        display: grid;
+        place-items: center;
+        min-height: 34px;
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 0.86rem;
+        font-weight: 800;
+      }
+
+      .segmented input:checked + span {
+        background: #fff;
+        color: var(--blue);
+        box-shadow: 0 2px 10px rgba(32, 44, 54, 0.11);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        min-height: 84px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: clamp(1.25rem, 3vw, 1.85rem);
+        line-height: 1;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .primary,
+      .secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-weight: 800;
+      }
+
+      .primary {
+        background: var(--blue);
+        color: #fff;
+      }
+
+      .secondary {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .files {
+        display: grid;
+        gap: 8px;
+      }
+
+      .file-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .file-row strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-row span,
+      .status {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      .status.ok {
+        color: var(--green);
+        font-weight: 800;
+      }
+
+      .status.error {
+        color: var(--red);
+        font-weight: 800;
+      }
+
+      @media (max-width: 720px) {
+        .topbar,
+        .controls {
+          align-items: stretch;
+          grid-template-columns: 1fr;
+        }
+
+        .topbar {
+          display: grid;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar > * {
+          flex: 1 1 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <nav class="topbar" aria-label="Demo navigation">
+        <a class="brand" href="./index.html">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 7h6l2 2h8v10H4V7Z" stroke="currentColor" stroke-width="1.8" />
+              <path d="M9 4h6M9 7h6M9 10h6M9 13h6" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+          </span>
+          <span>JSZipp compressor</span>
+        </a>
+        <a class="nav-link" href="./index.html">Full browser lab</a>
+      </nav>
+
+      <section class="panel">
+        <header class="header">
+          <h1>ZIP Compression</h1><!--<h1>Drop files, choose compression, download one ZIP.</h1>-->
+          <p>A compact `ZipWriter` demo for turning selected browser files into a single archive.</p>
+        </header>
+
+        <div class="body">
+          <div class="drop-zone" id="drop-zone">
+            <div class="drop-content">
+              <span class="drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.9" />
+                  <path d="M5 17v3h14v-3" stroke="currentColor" stroke-width="1.9" />
+                </svg>
+              </span>
+              <strong>Drop files or folders here</strong>
+              <span>or click to choose a folder</span>
+            </div>
+            <input id="file-input" type="file" multiple webkitdirectory directory aria-label="Choose files or folders to compress" />
+          </div>
+
+          <div class="controls">
+            <div class="field">
+              <label for="archive-name">Archive name</label>
+              <input id="archive-name" value="compressed-files.zip" />
+            </div>
+            <div class="field">
+              <label>Compression</label>
+              <div class="segmented" role="radiogroup" aria-label="Compression level">
+                <label><input type="radio" name="level" value="0" /><span>Store</span></label>
+                <label><input type="radio" name="level" value="6" checked /><span>Balanced</span></label>
+                <label><input type="radio" name="level" value="9" /><span>Maximum</span></label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="timestamps">Timestamps</label>
+              <select id="timestamps" aria-label="Timestamp fields to write">
+                <option value="1">DOS only</option>
+                <option value="3" selected>DOS + UNIX (default)</option>
+                <option value="5">DOS + NTFS</option>
+                <option value="7">DOS + UNIX + NTFS</option>
+              </select>
+            </div>
+          </div>
+
+          <section class="summary" aria-label="Compression summary">
+            <div class="metric">
+              <span>Files</span>
+              <strong id="file-count">0</strong>
+            </div>
+            <div class="metric">
+              <span>Input size</span>
+              <strong id="input-size">0 B</strong>
+            </div>
+            <div class="metric">
+              <span>ZIP size</span>
+              <strong id="zip-size">-</strong>
+            </div>
+          </section>
+
+          <div class="toolbar">
+            <button class="primary" id="compress" type="button" disabled>Compress ZIP</button>
+            <button class="secondary" id="download" type="button" disabled>Download ZIP</button>
+            <button class="secondary" id="clear" type="button">Clear</button>
+          </div>
+
+          <div class="status" id="status" role="status" aria-live="polite">No files selected.</div>
+          <div class="files" id="files" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { ZipWriter } from "../dist/jszipp.mjs";
+
+      const $ = (selector) => document.querySelector(selector);
+      const state = {
+        files: [],
+        blob: null,
+        archiveName: "compressed-files.zip"
+      };
+
+      const els = {
+        dropZone: $("#drop-zone"),
+        fileInput: $("#file-input"),
+        archiveName: $("#archive-name"),
+        timestamps: $("#timestamps"),
+        fileCount: $("#file-count"),
+        inputSize: $("#input-size"),
+        zipSize: $("#zip-size"),
+        compress: $("#compress"),
+        download: $("#download"),
+        clear: $("#clear"),
+        status: $("#status"),
+        files: $("#files")
+      };
+
+      init();
+
+      function init() {
+        bindDropZone();
+        els.compress.addEventListener("click", compressFiles);
+        els.download.addEventListener("click", downloadZip);
+        els.clear.addEventListener("click", clearFiles);
+      }
+
+      // Schedule a callback after the browser has had a chance to paint.
+      // Falls back to setTimeout when scheduler.postTask is unavailable.
+      function scheduleAfterPaint(fn) {
+        if (typeof scheduler !== "undefined" && scheduler.postTask) {
+          scheduler.postTask(fn, { priority: "background" });
+        } else if (typeof requestIdleCallback !== "undefined") {
+          requestIdleCallback(fn, { timeout: 200 });
+        } else {
+          setTimeout(fn, 0);
+        }
+      }
+
+      function bindDropZone() {
+        els.fileInput.addEventListener("change", () => setFiles(Array.from(els.fileInput.files || [])));
+
+        // Throttle dragover so repeated mouse-move events during a drag don't
+        // hammer classList updates on every frame.
+        let dragOverPending = false;
+        els.dropZone.addEventListener("dragenter", (event) => {
+          event.preventDefault();
+          els.dropZone.classList.add("active");
+        });
+        els.dropZone.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+          if (!dragOverPending) {
+            dragOverPending = true;
+            requestAnimationFrame(() => {
+              els.dropZone.classList.add("active");
+              dragOverPending = false;
+            });
+          }
+        });
+        els.dropZone.addEventListener("dragleave", (event) => {
+          event.preventDefault();
+          els.dropZone.classList.remove("active");
+        });
+        els.dropZone.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          els.dropZone.classList.remove("active");
+          els.status.className = "status";
+          els.status.textContent = "Reading dropped items...";
+          try {
+            setFiles(await getDroppedFiles(event.dataTransfer));
+          } catch (error) {
+            console.error(error);
+            els.status.className = "status error";
+            els.status.textContent = error instanceof Error ? error.message : String(error);
+          }
+        });
+      }
+
+      async function getDroppedFiles(dataTransfer) {
+        const items = Array.from(dataTransfer?.items || []);
+        const entries = items
+          .map((item) => item.webkitGetAsEntry?.())
+          .filter(Boolean);
+
+        // `dataTransfer.files` flattens folders and often omits relative paths.
+        // Browser directory entries preserve folder names, so use them whenever
+        // available and fall back to plain files for browsers without support.
+        if (entries.length) {
+          const nested = await Promise.all(entries.map((entry) => readEntry(entry, "")));
+          return nested.flat();
+        }
+
+        return Array.from(dataTransfer?.files || []);
+      }
+
+      async function readEntry(entry, parentPath) {
+        const path = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+        if (entry.isFile) {
+          return [await fileFromEntry(entry, path)];
+        }
+        if (entry.isDirectory) {
+          const entries = await readAllDirectoryEntries(entry.createReader());
+          const nested = await Promise.all(entries.map((child) => readEntry(child, path)));
+          return nested.flat();
+        }
+        return [];
+      }
+
+      function fileFromEntry(entry, path) {
+        return new Promise((resolve, reject) => {
+          entry.file((file) => {
+            // File.webkitRelativePath is read-only in most browsers, so attach
+            // our own relative path and let uniqueFilePath() consume it.
+            Object.defineProperty(file, "_relativePath", {
+              value: path,
+              configurable: true
+            });
+            resolve(file);
+          }, reject);
+        });
+      }
+
+      async function readAllDirectoryEntries(reader) {
+        const entries = [];
+        while (true) {
+          const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+          if (!batch.length) break;
+          entries.push(...batch);
+        }
+        return entries;
+      }
+
+      function setFiles(files) {
+        state.files = files;
+        state.blob = null;
+        els.download.disabled = true;
+        els.zipSize.textContent = "-";
+
+        // Immediately update the cheap counters so the UI feels responsive,
+        // then defer the heavier DOM work (size sum + file list) off the
+        // drop-event callstack so the browser can repaint first.
+        els.fileCount.textContent = String(files.length);
+        els.compress.disabled = files.length === 0;
+        els.status.className = "status";
+        els.status.textContent = files.length
+          ? `${files.length} file${files.length === 1 ? "" : "s"} ready.`
+          : "No files selected.";
+        els.inputSize.textContent = "…";
+        els.files.innerHTML = "";
+
+        scheduleAfterPaint(() => render());
+      }
+
+      function render() {
+        const files = state.files;
+
+        // Sum sizes in chunks to avoid a long synchronous loop that would
+        // block the main thread when thousands of files are dropped.
+        let total = 0;
+        const CHUNK = 500;
+        for (let i = 0; i < files.length; i += CHUNK) {
+          const end = Math.min(i + CHUNK, files.length);
+          for (let j = i; j < end; j++) total += files[j].size;
+        }
+
+        els.fileCount.textContent = String(files.length);
+        els.inputSize.textContent = formatBytes(total);
+        els.compress.disabled = files.length === 0;
+        els.status.className = "status";
+        els.status.textContent = files.length
+          ? `${files.length} file${files.length === 1 ? "" : "s"} ready.`
+          : "No files selected.";
+
+        // Build the preview list with a DocumentFragment to avoid repeated
+        // reflows, and cap the visible rows to keep DOM size small.
+        const PREVIEW_LIMIT = 12;
+        const frag = document.createDocumentFragment();
+        const shown = files.slice(0, PREVIEW_LIMIT);
+        for (const file of shown) {
+          const row = document.createElement("div");
+          row.className = "file-row";
+          const displayName = file._relativePath || file.webkitRelativePath || file.name;
+          row.innerHTML = `<strong title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</strong><span>${formatBytes(file.size)}</span>`;
+          frag.appendChild(row);
+        }
+        if (files.length > PREVIEW_LIMIT) {
+          const more = document.createElement("div");
+          more.className = "file-row";
+          more.innerHTML = `<strong>${files.length - PREVIEW_LIMIT} more files</strong><span>included</span>`;
+          frag.appendChild(more);
+        }
+        els.files.innerHTML = "";
+        els.files.appendChild(frag);
+      }
+
+      async function compressFiles() {
+        if (!state.files.length) return;
+        setBusy(true);
+        try {
+          const level = Number(document.querySelector("input[name='level']:checked").value);
+          const timestamps = Number(els.timestamps.value);
+          const writer = new ZipWriter({ level, outputAs: "blob", timestamps });
+          for (const file of state.files) {
+            await writer.add({
+              path: uniqueFilePath(file),
+              data: file,
+              method: level === 0 || shouldStore(file.name) ? "store" : "deflate",
+              meta: fileTimestamps(file)
+            });
+          }
+          state.blob = await writer.close();
+          state.archiveName = normalizeZipName(els.archiveName.value);
+          els.zipSize.textContent = formatBytes(state.blob.size);
+          els.download.disabled = false;
+          els.status.className = "status ok";
+          els.status.textContent = `Created ${state.archiveName}.`;
+        } catch (error) {
+          console.error(error);
+          els.status.className = "status error";
+          els.status.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function downloadZip() {
+        if (!state.blob) return;
+        const url = URL.createObjectURL(state.blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = state.archiveName;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function clearFiles() {
+        state.files = [];
+        state.blob = null;
+        els.fileInput.value = "";
+        els.download.disabled = true;
+        els.zipSize.textContent = "-";
+        render();
+      }
+
+      function setBusy(busy) {
+        els.compress.disabled = busy || state.files.length === 0;
+        els.compress.textContent = busy ? "Compressing..." : "Compress ZIP";
+      }
+
+      function fileTimestamps(file) {
+        const modifiedAt = new Date(file.lastModified || Date.now());
+        // The browser File API only exposes the modified time; creation and
+        // last-access times are not available from a selected/dropped File, so
+        // both fall back to the modified time. They are still supplied because
+        // the NTFS timestamp modes require createdAt and lastAccess.
+        const created = file.createdAt instanceof Date ? file.createdAt : modifiedAt;
+        const accessed = file.lastAccess instanceof Date ? file.lastAccess : modifiedAt;
+        return { modifiedAt, createdAt: created, lastAccess: accessed };
+      }
+
+      function uniqueFilePath(file) {
+        const base = normalizeEntryPath(file._relativePath || file.webkitRelativePath || file.name);
+        const index = state.files.indexOf(file);
+        const duplicateCount = state.files
+          .slice(0, index)
+          .filter((item) => normalizeEntryPath(item._relativePath || item.webkitRelativePath || item.name) === base)
+          .length;
+        if (!duplicateCount) return base;
+        const dot = base.lastIndexOf(".");
+        const suffix = `-${duplicateCount + 1}`;
+        return dot > 0 ? `${base.slice(0, dot)}${suffix}${base.slice(dot)}` : `${base}${suffix}`;
+      }
+
+      function normalizeEntryPath(path) {
+        return String(path)
+          .replaceAll("\\", "/")
+          .replace(/^\/+/, "")
+          .split("/")
+          .filter((part) => part && part !== "." && part !== "..")
+          .join("/");
+      }
+
+      function normalizeZipName(name) {
+        const trimmed = name.trim() || "compressed-files.zip";
+        return trimmed.toLowerCase().endsWith(".zip") ? trimmed : `${trimmed}.zip`;
+      }
+
+      function shouldStore(name) {
+        return /\.(?:avif|gif|jpe?g|mp3|mp4|pdf|png|webm|webp|zip)$/i.test(name);
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        const units = ["KB", "MB", "GB"];
+        let value = bytes / 1024;
+        let index = 0;
+        while (value >= 1024 && index < units.length - 1) {
+          value /= 1024;
+          index++;
+        }
+        return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[index]}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+    </script>
+  </body>
+</html>

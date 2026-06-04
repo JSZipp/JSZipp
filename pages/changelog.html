@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Changelog - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="changelog">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Release notes</span><h1>Changelog</h1><p class="lede">A scaffold for public release notes. Keep entries short, dated, and grouped by version.</p></section>
+      <h2>Unreleased</h2>
+      <div class="callout"><strong>In development.</strong> Breaking changes are still acceptable before the first publish.</div>
+      <ul>
+        <li><strong>Added</strong> <code>meta.dosAttributes</code>: the MS-DOS attribute byte (low 8 bits of external attributes). Range <code>0x00</code>–<code>0xff</code>; the directory bit <code>0x10</code> must match the entry kind. Allowed for the <code>Dos</code>, <code>Dos | Ntfs</code>, and <code>Dos | Unix | Ntfs</code> timestamp modes; rejected for <code>Dos | Unix</code>.</li>
+        <li><strong>Added</strong> <code>explicitDirectoryEntries</code> writer option (on <code>ZipEncoderOptions</code>, default <code>false</code>). When <code>true</code>, parent directories implied by an entry's path are materialized as standalone entries.</li>
+        <li><strong>Changed</strong> NTFS timestamp mode no longer requires <code>meta.createdAt</code> / <code>meta.lastAccess</code>; each missing value now defaults to <code>meta.modifiedAt</code>.</li>
+        <li><strong>Changed (breaking)</strong> reader entries no longer expose a pre-decoded <code>unixMode</code>. Derive it from <code>externalAttributes &gt;&gt;&gt; 16</code> (Unix mode) and <code>externalAttributes &amp; 0xff</code> (DOS attributes). Reduces reader bundle size.</li>
+        <li><strong>Changed</strong> <code>meta.unixPermissions</code> now requires the Unix timestamp mode (<code>timestamps</code> must include <code>TimestampMode.Unix</code>); otherwise it is rejected.</li>
+        <li><strong>Added</strong> option range validation: <code>timestamps</code> must be a bitmask in <code>0</code>–<code>7</code>; entry timestamps must be valid dates on or after 1970 (negative/<code>NaN</code> rejected); reader <code>maxArchiveSize</code> / <code>maxEntrySize</code> must be non-negative and finite.</li>
+        <li><strong>Docs</strong> new "Timestamp Modes and Archive Size" section; clarified that spec-related options belong on <code>ZipEncoderOptions</code>, not <code>ZipWriterOptions</code>.</li>
+      </ul>
+      <h2>1.0.0</h2>
+      <div class="callout"><strong>Initial public documentation baseline.</strong> The package currently reports version <code>1.0.0</code> in <code>package.json</code>.</div>
+      <ul>
+        <li>Browser-focused ZIP writer with <code>Blob</code>, <code>Response</code>, <code>ReadableStream</code>, <code>Uint8Array</code>, and <code>ArrayBuffer</code> output.</li>
+        <li>Random-access ZIP reader through <code>openZip()</code>.</li>
+        <li>Strict path handling, <code>strict-package</code> mode, anti-zip-bomb caps, ZIP64, metadata handling, and filename decoding support.</li>
+        <li>TypeScript declarations and dependency-free runtime package.</li>
+      </ul>
+      <h2>Maintenance format</h2>
+      <pre><code>## x.y.z - YYYY-MM-DD
+- Added ...
+- Changed ...
+- Fixed ...
+- Security ...</code></pre>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

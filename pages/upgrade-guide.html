@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Upgrade guide - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="upgrade">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Migration</span><h1>Upgrade guide</h1><p class="lede">JSZipp can replace JSZip in many browser workflows, but it is not an API-compatible drop-in.</p></section>
+      <h2>Quick comparison</h2>
+      <table><thead><tr><th>Task</th><th>JSZip</th><th>JSZipp</th></tr></thead><tbody>
+        <tr><td>Create ZIP</td><td><code>zip.file()</code>, <code>generateAsync()</code></td><td><code>writer.add()</code>, <code>writer.close()</code></td></tr>
+        <tr><td>Read ZIP</td><td><code>JSZip.loadAsync()</code></td><td><code>openZip(source)</code></td></tr>
+        <tr><td>Modify existing archive</td><td>Mutate loaded object</td><td>Open old archive and write a new archive</td></tr>
+        <tr><td>Output</td><td>Browser and Node-oriented options</td><td>Web-native <code>Blob</code>, <code>Response</code>, stream, bytes</td></tr>
+      </tbody></table>
+      <h2>Create a ZIP Blob</h2>
+      <pre><code>import { ZipWriter } from "jszipp";
+
+const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "images/logo.png", data });
+const blob = await writer.close();</code></pre>
+      <h2>Read one file</h2>
+      <pre><code>import { openZip } from "jszipp";
+
+const zip = await openZip(file, { pathMode: "strict-package" });
+const readme = await zip.get("README.md")?.text();
+await zip.close();</code></pre>
+      <h2>Migration dealbreakers</h2>
+      <ul>
+        <li>No fluent folder object API. Pass full ZIP paths such as <code>images/logo.png</code>.</li>
+        <li>No in-place mutation. Rebuild an archive when removing or replacing entries.</li>
+        <li>Synchronous writing accepts only <code>string</code>, <code>Uint8Array</code>, and <code>ArrayBuffer</code> data.</li>
+        <li>Legacy browser and Node-specific output modes are outside the main target.</li>
+      </ul>
+      <p>See the source maintenance notes in <code>docs/migrate-from-jszip.md</code> for the long-form migration guide.</p>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

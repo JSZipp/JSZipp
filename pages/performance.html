@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Performances / limitations - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="performance">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Boundaries</span><h1>Performances / limitations</h1><p class="lede">JSZipp optimizes for safe browser ZIP handling and compact dependency-free integration, not for every raw compression benchmark.</p></section>
+      <section class="grid two">
+        <article class="card"><h3>Memory model</h3><p>Each input entry is read and prepared before its ZIP records are emitted. Output streaming can avoid collecting the final archive in one object, but large individual entries still drive peak memory.</p></article>
+        <article class="card"><h3>Compression</h3><p>Writer compression is implemented in-repo and supports store plus deflate. Already-compressed files may be best stored or compressed at a low level.</p></article>
+        <article class="card"><h3>ZIP64</h3><p>ZIP64 is supported, but JavaScript number limits still apply. Values beyond <code>Number.MAX_SAFE_INTEGER</code> are rejected.</p></article>
+        <article class="card"><h3>Browser APIs</h3><p>Reading deflated entries depends on <code>DecompressionStream</code>. Runtime support should be verified for your browser baseline.</p></article>
+      </section>
+      <h2>Practical limits</h2>
+      <ul>
+        <li>Set <code>maxArchiveSize</code> and <code>maxEntrySize</code> for untrusted inputs.</li>
+        <li>Prefer <code>outputAs: "stream"</code> for large final archives when the destination can consume a stream.</li>
+        <li>Avoid materializing every entry at once when copying or inspecting large archives.</li>
+        <li>Use <code>pathMode: "strict-package"</code> for package-like uploads where duplicate or colliding names are meaningful attacks.</li>
+      </ul>
+      <h2>Benchmarking</h2>
+      <p>Use <code>demo/library-benchmark.html</code> as the local comparison harness, then validate with the exact archive shapes and browser targets your app uses.</p>
+      <div class="callout warn"><strong>Important limitation:</strong> JSZipp's stream-shaped writer does not mean true per-payload streaming compression.</div>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

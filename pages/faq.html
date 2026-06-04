@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>FAQ - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="faq">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Support</span><h1>FAQ</h1><p class="lede">Answers to common questions about JSZipp's scope, safety defaults, browser support, and migration tradeoffs.</p></section>
+      <h2>Is JSZipp a drop-in replacement for JSZip?</h2>
+      <p>No. JSZip exposes a mutable archive object with <code>file()</code>, <code>folder()</code>, and <code>generateAsync()</code>. JSZipp exposes append-style writers and readers: <code>writer.add()</code>, <code>writer.close()</code>, <code>openZip()</code>, and <code>readZipStream()</code>.</p>
+      <h2>Why are unsafe paths rejected by default?</h2>
+      <p>ZIP filenames are attacker-controlled paths. <code>openZip()</code> rejects Zip Slip paths, absolute paths, drive-letter paths, drive-relative paths, backslashes, and NUL bytes unless you opt into a different <code>pathMode</code>.</p>
+      <h2>When should I use <code>strict-package</code>?</h2>
+      <p>Use it for uploads, plugin packages, CI artifacts, templates, or any archive that crosses a trust boundary. It adds duplicate-name, case-collision, Unicode-normalization, and local/central size checks.</p>
+      <h2>Does JSZipp truly stream compression?</h2>
+      <p>No. Output can be stream-shaped, but each input entry is materialized before its ZIP records are emitted. This keeps headers predictable and preserves synchronous in-memory writing, but large individual entries still affect peak memory.</p>
+      <h2>What output types are supported?</h2>
+      <p><code>ZipWriter</code> can return <code>ReadableStream</code>, <code>Blob</code>, <code>Response</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code> through the <code>outputAs</code> option.</p>
+      <h2>What about old browsers?</h2>
+      <p>JSZipp targets modern browser APIs. Choose JSZip or a compatibility layer if your project must support older browsers that lack Web Streams or related primitives.</p>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

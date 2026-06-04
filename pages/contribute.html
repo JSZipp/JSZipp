@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>How to contribute - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <body data-page="contribute">
+    <header data-site-header></header>
+    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
+      <section class="hero"><span class="eyebrow">Development</span><h1>How to contribute</h1><p class="lede">Contributions should stay small, testable, and aligned with JSZipp's browser-first ZIP safety goals.</p></section>
+      <h2>Local workflow</h2>
+      <pre><code>pnpm install
+pnpm test
+pnpm run typecheck
+pnpm run build</code></pre>
+      <h2>Contribution checklist</h2>
+      <ul>
+        <li>Keep behavior changes focused and document the trust-boundary impact.</li>
+        <li>Add or update tests for writer output, reader parsing, path safety, metadata, or limits as appropriate.</li>
+        <li>Preserve public exception classes and DOMException names.</li>
+        <li>Update public docs when API behavior or migration guidance changes.</li>
+      </ul>
+      <h2>Documentation ownership</h2>
+      <p>Public pages should summarize user-facing behavior. Deep implementation rationale belongs in the <code>docs/</code> markdown references so the public site stays approachable.</p>
+    </main></div>
+    <footer class="footer" data-site-footer></footer>
+  </body>
+</html>

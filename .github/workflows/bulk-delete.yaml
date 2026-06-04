@@ -1,0 +1,230 @@
+name: Bulk Delete Specific Workflow Runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_workflow:
+        description: "Workflow filename to clean, e.g. main.yml, ci.yaml, or pages-build-deployment"
+        required: true
+        type: string
+
+      days_to_keep:
+        description: "Keep runs newer than this many days"
+        required: true
+        default: "14"
+        type: string
+
+      keep_latest:
+        description: "Also keep this many latest runs, regardless of age"
+        required: true
+        default: "5"
+        type: string
+
+      dry_run:
+        description: "Preview runs without deleting"
+        required: true
+        default: true
+        type: boolean
+
+      status:
+        description: "Optional status filter: completed, failure, success, cancelled, etc. Leave empty for all"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  delete-runs:
+    name: Delete old runs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TARGET_WORKFLOW: ${{ inputs.target_workflow }}
+          DAYS_TO_KEEP: ${{ inputs.days_to_keep }}
+          KEEP_LATEST: ${{ inputs.keep_latest }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          STATUS: ${{ inputs.status }}
+          CURRENT_WORKFLOW: ${{ github.workflow_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Repository: $REPO"
+          echo "Target workflow: $TARGET_WORKFLOW"
+          echo "Days to keep: $DAYS_TO_KEEP"
+          echo "Keep latest: $KEEP_LATEST"
+          echo "Dry run: $DRY_RUN"
+          echo "Status filter: ${STATUS:-<none>}"
+
+          # Basic input validation
+          if ! [[ "$DAYS_TO_KEEP" =~ ^[0-9]+$ ]]; then
+            echo "::error::days_to_keep must be a non-negative integer."
+            exit 1
+          fi
+
+          if ! [[ "$KEEP_LATEST" =~ ^[0-9]+$ ]]; then
+            echo "::error::keep_latest must be a non-negative integer."
+            exit 1
+          fi
+
+          if [[ "$TARGET_WORKFLOW" != "pages-build-deployment" &&
+                "$TARGET_WORKFLOW" != *.yml &&
+                "$TARGET_WORKFLOW" != *.yaml ]]; then
+            echo "::error::target_workflow must be a .yml/.yaml file, or pages-build-deployment."
+            exit 1
+          fi
+
+          # Optional guard: avoid using this workflow to delete its own runs.
+          # github.workflow_ref looks like: owner/repo/.github/workflows/file.yml@ref
+          if [[ "$CURRENT_WORKFLOW" == *"/.github/workflows/$TARGET_WORKFLOW@"* ]]; then
+            echo "::error::Refusing to delete runs for this cleanup workflow itself."
+            exit 1
+          fi
+
+          # UTC ISO 8601 cutoff, matching GitHub's created_at format.
+          CUTOFF_DATE="$(date -u -d "$DAYS_TO_KEEP days ago" +"%Y-%m-%dT%H:%M:%SZ")"
+          echo "Cutoff date: $CUTOFF_DATE"
+
+          echo "Fetching workflow runs..."
+
+          # Output columns:
+          # id<TAB>created_at<TAB>status<TAB>conclusion<TAB>display_title
+
+          if [ "$TARGET_WORKFLOW" = "pages-build-deployment" ]; then
+            echo "Detected GitHub Pages generated workflow."
+
+            # GitHub Pages generated workflow is not a normal .yml file.
+            # Try the internal workflow path first.
+            API_PATH="/repos/$REPO/actions/workflows/pages%2Fpages-build-deployment/runs?per_page=100"
+
+            if [ -n "$STATUS" ]; then
+              API_PATH="$API_PATH&status=$STATUS"
+            fi
+
+            echo "Trying direct Pages workflow API path: $API_PATH"
+
+            set +e
+            runs="$(
+              gh api --paginate "$API_PATH" \
+                --jq '.workflow_runs[] | [.id, .created_at, .status, (.conclusion // ""), (.display_title // "")] | @tsv'
+            )"
+            api_exit_code="$?"
+            set -e
+
+            if [ "$api_exit_code" -ne 0 ]; then
+              echo "::warning::Direct Pages workflow lookup failed. Falling back to repository-wide run scan."
+
+              API_PATH="/repos/$REPO/actions/runs?per_page=100"
+
+              if [ -n "$STATUS" ]; then
+                API_PATH="$API_PATH&status=$STATUS"
+              fi
+
+              runs="$(
+                gh api --paginate "$API_PATH" \
+                  --jq '
+                    .workflow_runs[]
+                    | select(
+                        (.name // "" | ascii_downcase | contains("pages"))
+                        or (.path // "" | ascii_downcase | contains("pages"))
+                        or (.html_url // "" | ascii_downcase | contains("pages"))
+                        or (.display_title // "" | ascii_downcase | contains("pages"))
+                      )
+                    | [.id, .created_at, .status, (.conclusion // ""), (.display_title // "")]
+                    | @tsv
+                  '
+              )"
+            fi
+          else
+            echo "Detected normal workflow file."
+
+            API_PATH="/repos/$REPO/actions/workflows/$TARGET_WORKFLOW/runs?per_page=100"
+
+            if [ -n "$STATUS" ]; then
+              API_PATH="$API_PATH&status=$STATUS"
+            fi
+
+            runs="$(
+              gh api --paginate "$API_PATH" \
+                --jq '.workflow_runs[] | [.id, .created_at, .status, (.conclusion // ""), (.display_title // "")] | @tsv'
+            )"
+          fi
+
+          if [ -z "$runs" ]; then
+            echo "No workflow runs found for $TARGET_WORKFLOW."
+
+            if [ "$TARGET_WORKFLOW" = "pages-build-deployment" ]; then
+              echo ""
+              echo "Debug: latest repository workflow runs:"
+              echo "----------------------------------------"
+
+              gh api "/repos/$REPO/actions/runs?per_page=30" \
+                --jq '
+                  .workflow_runs[]
+                  | {
+                      id,
+                      name,
+                      path,
+                      event,
+                      created_at,
+                      status,
+                      conclusion,
+                      display_title,
+                      html_url
+                    }
+                '
+            fi
+
+            exit 0
+          fi
+
+          total_count="$(echo "$runs" | wc -l | tr -d ' ')"
+          echo "Total runs fetched: $total_count"
+
+          # GitHub returns runs newest first.
+          # First keep the newest KEEP_LATEST runs, then delete only runs older than cutoff.
+          candidates="$(
+            echo "$runs" \
+              | tail -n +"$((KEEP_LATEST + 1))" \
+              | awk -F'\t' -v cutoff="$CUTOFF_DATE" '$2 < cutoff { print }'
+          )"
+
+          if [ -z "$candidates" ]; then
+            echo "No runs matched deletion criteria."
+            exit 0
+          fi
+
+          delete_count="$(echo "$candidates" | wc -l | tr -d ' ')"
+
+          echo ""
+          echo "Runs selected for deletion: $delete_count"
+          echo "----------------------------------------"
+          echo "$candidates" | while IFS=$'\t' read -r run_id created_at status conclusion title; do
+            echo "Run ID: $run_id | Created: $created_at | Status: $status | Conclusion: ${conclusion:-n/a} | Title: ${title:-n/a}"
+          done
+          echo "----------------------------------------"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run enabled. No runs were deleted."
+            exit 0
+          fi
+
+          echo ""
+          echo "Deleting runs..."
+
+          echo "$candidates" | while IFS=$'\t' read -r run_id created_at status conclusion title; do
+            echo "Deleting run ID: $run_id created at $created_at"
+            gh api \
+              --method DELETE \
+              "/repos/$REPO/actions/runs/$run_id" \
+              --silent
+          done
+
+          echo "Cleanup complete."

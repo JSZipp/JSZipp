@@ -1,6 +1,6 @@
 {
   "name": "web-jszipp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Fast, compact, and defensive ZIP reader and writer for modern browser apps, with safe defaults, Web Streams, ZIP64, metadata, and unsafe-archive guards.",
   "license": "MIT",
   "private": false,
@@ -61,7 +61,8 @@
     "prepack": "pnpm run typecheck && pnpm run build && pnpm run test",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "pack:dry": "pnpm pack --dry-run"
+    "pack:dry": "pnpm pack --dry-run",
+    "test:jszipp-npm-package": "node scripts/test-npm-package.mjs"
   },
   "devDependencies": {
     "@rspack/cli": "^2.0.5",

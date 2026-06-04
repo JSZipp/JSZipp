@@ -60,7 +60,7 @@ jobs:
       - name: Check whether version is already on npm
         id: npm
         run: |
-          if npm view "${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" version > /dev/null 2>&1; then
+          if pnpm view "${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" version > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"

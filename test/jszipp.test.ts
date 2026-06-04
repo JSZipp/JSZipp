@@ -1294,6 +1294,17 @@ describe("ZipWriter", () => {
     expect(await reader.get("response.txt")?.text()).toBe("response body");
   });
 
+  it.concurrent("returns a Blob with the configured MIME type when outputAs is blob", async () => {
+    const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "blob", mimeType: "application/x-zip-compressed" });
+
+    await writer.add({ path: "blob-mime.txt", data: "blob body" });
+    const blob = await writer.close();
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe("application/x-zip-compressed");
+    expect(await (await openZip(blob)).get("blob-mime.txt")?.text()).toBe("blob body");
+  });
+
   it.concurrent("returns Uint8Array and ArrayBuffer outputs", async () => {
     const bytesWriter = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await bytesWriter.add({ path: "bytes-output.txt", data: "byte output" });

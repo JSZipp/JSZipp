@@ -1,6 +1,6 @@
 {
   "name": "web-jszipp",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Fast, compact, and defensive ZIP reader and writer for modern browser apps, with safe defaults, Web Streams, ZIP64, metadata, and unsafe-archive guards.",
   "license": "MIT",
   "private": false,

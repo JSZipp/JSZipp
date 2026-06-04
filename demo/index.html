@@ -2663,7 +2663,7 @@
         if (out === "blob") return value;
         if (out === "response") return value.blob();
         if (out === "uint8array" || out === "arraybuffer") return new Blob([value], { type: "application/zip" });
-        return new Response(value).blob(); // stream
+        return new Response(value, { headers: { "Content-Type": this.mimeType } }).blob(); // stream
       }
 
       function patchPath(bytes, from, to) {

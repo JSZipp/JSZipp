@@ -566,7 +566,7 @@ Use `ZipTransformStream` when another part of your app already writes
 import { ZipTransformStream } from "web-jszipp";
 
 const zipStream = new ZipTransformStream({ level: 6 });
-const archivePromise = new Response(zipStream.readable).blob();
+const archivePromise = new Response(zipStream.readable, { headers: { "Content-Type": this.mimeType } }).blob();
 const writer = zipStream.writable.getWriter();
 
 await writer.write({ path: "a.txt", data: "A" });

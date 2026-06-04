@@ -662,7 +662,7 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
     for (const chunk of this.encoder.close()) this.controller?.enqueue(chunk);
     this.controller?.close();
 
-    if (this.outputAs === "blob") return new Response(this.output).blob() as Promise<ZipWriterCloseResult<T>>;
+    if (this.outputAs === "blob") return new Response(this.output, { headers: { "Content-Type": this.mimeType } }).blob() as Promise<ZipWriterCloseResult<T>>;
     if (this.outputAs === "response") return new Response(this.output, { headers: { "Content-Type": this.mimeType } }) as ZipWriterCloseResult<T>;
     if (this.outputAs === "uint8array") return readStream(this.output, this.encoder.signal) as Promise<ZipWriterCloseResult<T>>;
     if (this.outputAs === "arraybuffer") {
@@ -695,7 +695,7 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
     this.controller?.enqueue(bytes);
     this.controller?.close();
 
-    if (this.outputAs === "blob") return new Blob([bytes], { type: "application/zip" }) as ZipWriterCloseResult<T>;
+    if (this.outputAs === "blob") return new Blob([bytes], { type: this.mimeType }) as ZipWriterCloseResult<T>;
     if (this.outputAs === "response") return new Response(bytes, { headers: { "Content-Type": this.mimeType } }) as ZipWriterCloseResult<T>;
     if (this.outputAs === "uint8array") return bytes as ZipWriterCloseResult<T>;
     if (this.outputAs === "arraybuffer") return arrayBufferFromBytes(bytes) as ZipWriterCloseResult<T>;

@@ -467,7 +467,18 @@
     </main>
 
     <script type="module">
-      import { ZipWriter } from "../dist/jszipp.mjs";
+      // dynamic script url
+      async function loadJSZippModule() {
+        const github = ["https://jszipp.github.io"].includes(location.origin);
+
+        return import(
+          github
+            ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.min.js"
+            : "../dist/jszipp.mjs"
+        );
+      }
+
+      const { ZipWriter } = await loadJSZippModule();
 
       const $ = (selector) => document.querySelector(selector);
       const state = {

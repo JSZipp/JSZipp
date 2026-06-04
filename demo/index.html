@@ -1710,7 +1710,24 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script type="module">
-      import JSZipp, { ZipTransformStream, ZipWriter, openZip, readZipStream } from "../dist/jszipp.mjs";
+      // dynamic script url
+      async function loadJSZippModule() {
+        const github = ["https://jszipp.github.io"].includes(location.origin);
+
+        return import(
+          github
+            ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.min.js"
+            : "../dist/jszipp.mjs"
+        );
+      }
+
+      const {
+        default: JSZipp,
+        ZipTransformStream,
+        ZipWriter,
+        openZip,
+        readZipStream,
+      } = await loadJSZippModule();
 
       const $ = (s) => document.querySelector(s);
       const $$ = (s) => Array.from(document.querySelectorAll(s));

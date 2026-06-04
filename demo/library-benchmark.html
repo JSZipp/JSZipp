@@ -839,20 +839,21 @@
     </div>
 
     <script>
+        const jszippUMD = location.origin === "https://jszipp.github.io" ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.min.js" : "../dist/jszipp.umd.js";
         const LIBRARIES = [
             {
                 id: "jszipp",
                 name: "JSZipp",
                 method: ".write()",
                 kind: "jszipp",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
             },
             {
                 id: "jszipp-compact",
                 name: "JSZipp",
                 method: ".write(), traditional",
                 kind: "jszipp",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
                 timestamps: 1, // TimestampMode.Dos
             },
             {
@@ -860,7 +861,7 @@
                 name: "JSZipp",
                 method: ".write(), comprehensive",
                 kind: "jszipp",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
                 timestamps: 7, // TimestampMode.Dos | Unix | Ntfs
             },
             {
@@ -868,14 +869,14 @@
                 name: "JSZipp",
                 method: ".writeSync()",
                 kind: "jszippSync",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
             },
             {
                 id: "jszipp-sync-compact",
                 name: "JSZipp",
                 method: ".writeSync(), traditional",
                 kind: "jszippSync",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
                 timestamps: 1, // TimestampMode.Dos
             },
             {
@@ -883,7 +884,7 @@
                 name: "JSZipp",
                 method: ".writeSync(), comprehensive",
                 kind: "jszippSync",
-                source: "../dist/jszipp.umd.js",
+                source: jszippUMD,
                 timestamps: 7, // TimestampMode.Dos | Unix | Ntfs
             },
             {

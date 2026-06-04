@@ -1,55 +1,47 @@
 # .github/workflows/publish-npm.yaml
 name: Publish to npm
 
+# see https://docs.npmjs.com/trusted-publishers
+
 on:
   push:
     branches:
       - main
     paths:
       - package.json
-      - pnpm-lock.yaml
-      - src/**
-      - scripts/**
-      - rspack.config.mjs
-      - tsconfig*.json
-      - README.md
-      - LICENSE
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
+  id-token: write  # Required for OIDC
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      id-token: write
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Enable pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11 # Use pnpm v11+ for native OIDC support
-
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22.14.0 # Minimum required Node version
-          cache: pnpm
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false  # never use caching in release builds
 
       - name: Upgrade npm for trusted publishing (OIDC)
         run: npm install -g npm@latest
 
       - name: Check npm version
         run: npm --version
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11 # Use pnpm v11+ for native OIDC support
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

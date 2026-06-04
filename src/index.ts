@@ -695,7 +695,7 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
     this.controller?.enqueue(bytes);
     this.controller?.close();
 
-    if (this.outputAs === "blob") return new Blob([bytes]) as ZipWriterCloseResult<T>;
+    if (this.outputAs === "blob") return new Blob([bytes], { type: "application/zip" }) as ZipWriterCloseResult<T>;
     if (this.outputAs === "response") return new Response(bytes, { headers: { "Content-Type": this.mimeType } }) as ZipWriterCloseResult<T>;
     if (this.outputAs === "uint8array") return bytes as ZipWriterCloseResult<T>;
     if (this.outputAs === "arraybuffer") return arrayBufferFromBytes(bytes) as ZipWriterCloseResult<T>;

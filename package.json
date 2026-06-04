@@ -1,5 +1,5 @@
 {
-  "name": "jszipp",
+  "name": "js-zipp",
   "version": "1.0.0",
   "description": "Fast, compact, and defensive ZIP reader and writer for modern browser apps, with safe defaults, Web Streams, ZIP64, metadata, and unsafe-archive guards.",
   "license": "MIT",

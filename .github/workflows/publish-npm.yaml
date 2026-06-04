@@ -12,12 +12,13 @@ on:
 
 permissions:
   contents: read
+  actions: write # Required to dispatch the GitHub release workflow
   id-token: write  # Required for OIDC
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -51,8 +52,10 @@ jobs:
         run: |
           NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check whether version is already on npm
         id: npm
@@ -62,6 +65,72 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Check whether GitHub release already exists
+        if: steps.npm.outputs.exists == 'false'
+        id: github_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.pkg.outputs.tag }}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub release if missing
+        if: steps.npm.outputs.exists == 'false' && steps.github_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_WORKFLOW: release-package.yaml
+          RELEASE_TAG: ${{ steps.pkg.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          export START_TIME
+          START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          gh workflow run "$RELEASE_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tag="$RELEASE_TAG" \
+            -f release_name="$RELEASE_TAG" \
+            -f prerelease=false \
+            -f draft=false \
+            -f run_checks=true
+
+          echo "Waiting for $RELEASE_WORKFLOW to create $RELEASE_TAG..."
+
+          RUN_ID=""
+          for _ in {1..60}; do
+            RUN_ID=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$RELEASE_WORKFLOW" \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,createdAt \
+              --jq '.[] | select(.headSha == env.GITHUB_SHA and .createdAt >= env.START_TIME) | .databaseId' \
+              | head -n 1)
+
+            if [ -n "$RUN_ID" ]; then
+              break
+            fi
+
+            sleep 5
+          done
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Could not find the dispatched release workflow run."
+            exit 1
+          fi
+
+          gh run watch "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status \
+            --interval 10
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null
 
       - name: Pack dry run
         if: steps.npm.outputs.exists == 'false'

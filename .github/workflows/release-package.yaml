@@ -68,7 +68,7 @@ jobs:
           fi
 
           if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::error::This release workflow may only be run manually."
+            echo "::error::This release workflow may only be run manually or by another workflow dispatch."
             exit 1
           fi
 
@@ -98,7 +98,24 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Check tag does not already exist
+      - name: Check whether GitHub release already exists
+        id: github_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${{ steps.release.outputs.tag }}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub release ${{ steps.release.outputs.tag }} already exists. Nothing to create."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check whether tag already exists
+        if: steps.github_release.outputs.exists == 'false'
+        id: tag
         shell: bash
         run: |
           set -euo pipefail
@@ -106,11 +123,14 @@ jobs:
           git fetch --tags
 
           if git rev-parse "${{ steps.release.outputs.tag }}" >/dev/null 2>&1; then
-            echo "::error::Tag ${{ steps.release.outputs.tag }} already exists."
-            exit 1
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.release.outputs.tag }} already exists; the release will be created from the existing tag."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node
+        if: steps.github_release.outputs.exists == 'false'
         uses: actions/setup-node@v6
         with:
           node-version: 22.14.0
@@ -118,28 +138,33 @@ jobs:
           package-manager-cache: false
 
       - name: Upgrade npm for trusted publishing
+        if: steps.github_release.outputs.exists == 'false'
         run: npm install -g npm@latest
 
       - name: Enable pnpm
+        if: steps.github_release.outputs.exists == 'false'
         uses: pnpm/action-setup@v6
         with:
           version: 11
 
       - name: Install dependencies
+        if: steps.github_release.outputs.exists == 'false'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        if: inputs.run_checks
+        if: steps.github_release.outputs.exists == 'false' && inputs.run_checks
         run: pnpm run typecheck
 
       - name: Build
+        if: steps.github_release.outputs.exists == 'false'
         run: pnpm run build
 
       - name: Test
-        if: inputs.run_checks
+        if: steps.github_release.outputs.exists == 'false' && inputs.run_checks
         run: pnpm run test
 
       - name: Package release assets
+        if: steps.github_release.outputs.exists == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -178,9 +203,10 @@ jobs:
           zip -r "$ASSET_DIR/jszipp-${TAG}-dist.zip" dist
 
           echo "Release assets:"
-          find "$ASSET_DIR" -type f -maxdepth 1 -print | sort
+          find "$ASSET_DIR" -maxdepth 1 -type f -print | sort
 
       - name: Create and push tag
+        if: steps.github_release.outputs.exists == 'false' && steps.tag.outputs.exists == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -192,6 +218,7 @@ jobs:
           git push origin "${{ steps.release.outputs.tag }}"
 
       - name: Create GitHub release
+        if: steps.github_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}

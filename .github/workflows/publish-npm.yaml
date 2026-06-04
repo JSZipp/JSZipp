@@ -1,0 +1,80 @@
+# .github/workflows/publish-npm.yaml
+name: Publish to npm
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - pnpm-lock.yaml
+      - src/**
+      - scripts/**
+      - rspack.config.mjs
+      - tsconfig*.json
+      - README.md
+      - LICENSE
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11 # Use pnpm v11+ for native OIDC support
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0 # Minimum required Node version
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing (OIDC)
+        run: npm install -g npm@latest
+
+      - name: Check npm version
+        run: npm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read package version
+        id: pkg
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether version is already on npm
+        id: npm
+        run: |
+          if npm view "${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" version > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pack dry run
+        if: steps.npm.outputs.exists == 'false'
+        run: pnpm pack --dry-run
+
+      - name: Publish to npm
+        if: steps.npm.outputs.exists == 'false'
+        run: pnpm publish --access public --no-git-checks

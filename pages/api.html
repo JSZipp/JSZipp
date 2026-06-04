@@ -186,7 +186,7 @@
   openZip,
   readZipStream,
   TimestampMode
-} from "jszipp";
+} from "web-jszipp";
 
 // Named imports and the namespace are equivalent:
 const a = new ZipWriter();
@@ -927,7 +927,7 @@ const writer = new ZipWriter({
           The default export is a <code>JSZipp</code> object bundling the runtime API values, for
           callers who prefer a single namespace over named imports.
         </p>
-        <pre><code>import JSZipp from "jszipp";
+        <pre><code>import JSZipp from "web-jszipp";
 
 JSZipp.ZipWriter;          // class
 JSZipp.ZipTransformStream; // class

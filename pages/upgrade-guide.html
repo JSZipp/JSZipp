@@ -13,13 +13,13 @@
         <tr><td>Output</td><td>Browser and Node-oriented options</td><td>Web-native <code>Blob</code>, <code>Response</code>, stream, bytes</td></tr>
       </tbody></table>
       <h2>Create a ZIP Blob</h2>
-      <pre><code>import { ZipWriter } from "jszipp";
+      <pre><code>import { ZipWriter } from "web-jszipp";
 
 const writer = new ZipWriter({ outputAs: "blob" });
 await writer.add({ path: "images/logo.png", data });
 const blob = await writer.close();</code></pre>
       <h2>Read one file</h2>
-      <pre><code>import { openZip } from "jszipp";
+      <pre><code>import { openZip } from "web-jszipp";
 
 const zip = await openZip(file, { pathMode: "strict-package" });
 const readme = await zip.get("README.md")?.text();

@@ -7,9 +7,9 @@ const require = createRequire(import.meta.url);
 
 describe("package exports", () => {
   it("exposes ESM root and browser-legacy subpaths", async () => {
-    const root = await import("jszipp");
-    const cr61ff58 = await import("jszipp/browser-legacy/cr61ff58");
-    const cr86ff68 = await import("jszipp/browser-legacy/cr86ff68");
+    const root = await import("web-jszipp");
+    const cr61ff58 = await import("web-jszipp/browser-legacy/cr61ff58");
+    const cr86ff68 = await import("web-jszipp/browser-legacy/cr86ff68");
 
     expect(root.ZipWriter).toBeTypeOf("function");
     expect(root.ZipTransformStream).toBeTypeOf("function");
@@ -23,7 +23,7 @@ describe("package exports", () => {
   });
 
   it("exposes the CommonJS root", () => {
-    const root = require("jszipp");
+    const root = require("web-jszipp");
 
     expect(root.ZipWriter).toBeTypeOf("function");
     expect(root.ZipTransformStream).toBeTypeOf("function");

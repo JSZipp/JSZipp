@@ -26,7 +26,7 @@
   ZipTransformStream,
   openZip,
   readZipStream
-} from "jszipp";
+} from "web-jszipp";
 
 // Namespace import is also available.
 const writer = new JSZipp.ZipWriter({ outputAs: "blob" });</code></pre>
@@ -92,7 +92,7 @@ await zip.close();</code></pre>
 &lt;ul id="zip-entries"&gt;&lt;/ul&gt;
 
 &lt;script type="module"&gt;
-import { openZip } from "jszipp";
+import { openZip } from "web-jszipp";
 
 const input = document.querySelector("#zip-files");
 const list = document.querySelector("#zip-entries");
@@ -170,7 +170,7 @@ await zip.close();</code></pre>
 &lt;p id="result"&gt;&lt;/p&gt;
 
 &lt;script type="module"&gt;
-import { ZipWriter } from "jszipp";
+import { ZipWriter } from "web-jszipp";
 
 const form = document.querySelector("#download-form");
 const progress = document.querySelector("#progress");

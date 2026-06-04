@@ -42,7 +42,7 @@ zip.folder("images")?.file("logo.png", data);
 JSZipp has no nested folder object API. Pass full ZIP paths to a writer instead:
 
 ```js
-import { ZipWriter } from "jszipp";
+import { ZipWriter } from "web-jszipp";
 
 const writer = new ZipWriter({ outputAs: "blob" });
 await writer.add({ path: "images/logo.png", data });
@@ -71,7 +71,7 @@ JSZipp does not mutate an existing archive. To edit, open the old archive and
 write a new one:
 
 ```js
-import { ZipWriter, openZip } from "jszipp";
+import { ZipWriter, openZip } from "web-jszipp";
 
 const source = await openZip(input);
 const writer = new ZipWriter({ outputAs: "blob" });

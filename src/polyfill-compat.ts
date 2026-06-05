@@ -19,6 +19,30 @@
 // classes refuse across the polyfill boundary, and the reason these are used
 // uniformly in compat builds even where a native class exists.
 
+// --- Old-browser primitives ----------------------------------------------------
+// `globalThis` itself shipped in Chrome 71 / Firefox 65, so it is ABSENT on the
+// CR61FF58 floor (Chrome 61 / Firefox 58) and referencing it bare would throw
+// ReferenceError before any feature detection runs. `self` exists in every browser
+// context (window + workers) far below that floor; the chain degrades to `window`
+// and finally an empty object so feature-detect reads return undefined instead of
+// throwing. `typeof x` on an undeclared name is itself safe, and there is no
+// eval/Function, so this is CSP-safe. Exported so the per-target entry modules
+// (which also read globals like AbortController) share one stand-in.
+export const glob: typeof globalThis =
+  (typeof globalThis !== "undefined" ? globalThis
+    : typeof self !== "undefined" ? self
+      : typeof window !== "undefined" ? window
+        : {}) as typeof globalThis;
+
+// The async-iteration symbol shipped in Chrome 63 / Firefox 57, so it is undefined
+// on Chrome 61. SWC's downleveled async-generator/for-await helpers key iterators
+// as `Symbol.asyncIterator || "@@asyncIterator"`; mirroring that exact fallback
+// here keeps a polyfill stream async-iterable under the SAME key the downleveled
+// `for await` looks up, so iterating one works on Chrome 61 without polluting the
+// global Symbol. On modern engines it is the real symbol and native `for await`
+// finds it. (Typed as symbol so it is a valid computed member key.)
+const ASYNC_ITERATOR = ((typeof Symbol === "function" && Symbol.asyncIterator) || "@@asyncIterator") as symbol;
+
 // --- Web Streams (minimal WHATWG family) ---------------------------------------
 // State tags shared by the readable/writable machines: 0 = active, 1 = closed,
 // 2 = errored. Kept as integers so the minifier can fold the comparisons.
@@ -166,14 +190,14 @@ class ReadableStreamPoly<T> {
     return transform.readable;
   }
 
-  [Symbol.asyncIterator](): AsyncIterableIterator<T> {
+  [ASYNC_ITERATOR](): AsyncIterableIterator<T> {
     const reader = this.getReader();
     return {
       next: () => reader.read() as Promise<IteratorResult<T>>,
       return: (value?: unknown) =>
         reader.cancel(value).then(() => { reader.releaseLock(); return { done: true, value: undefined } as IteratorResult<T>; }),
-      [Symbol.asyncIterator]() { return this; },
-    };
+      [ASYNC_ITERATOR]() { return this; },
+    } as unknown as AsyncIterableIterator<T>;
   }
 }
 
@@ -288,21 +312,78 @@ export const WritableStream_ = WritableStreamPoly as unknown as typeof WritableS
 // Used by the writer to detect a ReadableStream payload. On Firefox 65+ / Chrome
 // 43+ the user may pass a native ReadableStream even though we construct ponyfill
 // ones internally, so accept both classes.
-const NativeReadableStream = globalThis.ReadableStream as typeof ReadableStream | undefined;
+const NativeReadableStream = glob.ReadableStream as typeof ReadableStream | undefined;
 export const isReadableStream_ = (x: unknown): x is ReadableStream =>
   x instanceof ReadableStreamPoly || (NativeReadableStream !== undefined && x instanceof NativeReadableStream);
 
-// AbortSignal.prototype.throwIfAborted() shipped in Chrome 100 / Firefox 97, but
-// the library calls it on every signal (including user-supplied ones). Where the
-// AbortSignal base class exists (Firefox 57+, Chrome 66+) we patch the prototype
-// so user signals gain the method; where it does not (Chrome 61) the only signals
-// in play come from the AbortController polyfill, whose signals already have it.
+// False for the compat builds: the writer's output is a polyfilled ReadableStream,
+// and the native Response constructor brand-checks for a REAL ReadableStream. A
+// poly stream fails that check and is coerced to a USVString — `new Response(poly)`
+// silently yields a body of the literal text "[object Object]" rather than the
+// archive bytes. So the writer must drain the poly stream to bytes and build the
+// Blob/Response from those instead (index.ts gates on this constant). The check
+// folds at build time, so the modern build keeps the direct streaming path.
+export const responseAcceptsStream_ = false;
+
+// --- Blob.arrayBuffer / AbortSignal.throwIfAborted, via a private member key ----
+// Both `Blob.prototype.arrayBuffer()` (Chrome 76 / Firefox 69) and
+// `AbortSignal.prototype.throwIfAborted()` (Chrome 100 / Firefox 97) are missing on
+// the legacy floors — and the library calls them on USER-supplied objects (openZip
+// Blob/File sources, entry payloads, caller-passed abort signals). A subclass can't
+// help because those objects are NATIVE instances, not subclass instances. So the
+// polyfill must land on the real prototype the user object inherits from.
+//
+// To do that without changing anything OBSERVABLE on the global, the method is
+// installed under a private key. `arrayBuffer_` / `throwIfAborted_` are the keys the
+// library indexes with (`blob[arrayBuffer_]()`):
+//   * In the MODERN seam (polyfill.ts) they are the native STRING names, so
+//     `blob[arrayBuffer_]()` is exactly `blob.arrayBuffer()` and the emitted code is
+//     identical to a direct native call — no install needed.
+//   * In the COMPAT seam (here) they are a unique Symbol per build. installPolyfills
+//     attaches the method on `Blob.prototype` / `AbortSignal.prototype` under that
+//     Symbol. Symbol keys are skipped by `for…in` / `Object.keys` / `JSON` and do
+//     not shadow the spec method, so the "observable global" is unchanged — a
+//     `"arrayBuffer" in Blob.prototype` feature-test still reports the real answer.
+// Typed as the native string name so call sites typecheck against the DOM lib; the
+// runtime value in this module is a Symbol.
+export const arrayBuffer_ = Symbol("jszipp.arrayBuffer") as unknown as "arrayBuffer";
+export const throwIfAborted_ = Symbol("jszipp.throwIfAborted") as unknown as "throwIfAborted";
+
+const readBlobBytes = (blob: Blob): Promise<ArrayBuffer> =>
+  new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new glob.FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error ?? new DOMException("failed to read Blob", "NotReadableError"));
+    reader.readAsArrayBuffer(blob);
+  });
+
+// Installs the two methods under the private Symbol keys on the real prototypes, so
+// native user objects gain them. Native method is reused as the fast path where the
+// engine already has it (e.g. Blob.arrayBuffer on Chrome 86); a fallback is used
+// where it does not (Firefox 68, the CR61FF58 floor). Idempotent; runs once at
+// module load (via index.ts). On Chrome 61 there is no global AbortSignal base — the
+// AbortController poly defines [throwIfAborted_] on its own signal instead, so the
+// AbortSignal branch here simply finds nothing to patch and skips.
 export const installPolyfills = (): void => {
-  const proto = globalThis.AbortSignal?.prototype as (AbortSignal & { throwIfAborted?(): void }) | undefined;
-  if (proto && typeof proto.throwIfAborted !== "function") {
-    proto.throwIfAborted = function (this: AbortSignal): void {
-      if (this.aborted) throw (this as AbortSignal & { reason?: unknown }).reason ?? new DOMException("signal is aborted without reason", "AbortError");
-    };
+  const B = glob.Blob;
+  if (B) {
+    const proto = B.prototype as unknown as Record<PropertyKey, unknown>;
+    if (!proto[arrayBuffer_]) {
+      proto[arrayBuffer_] = typeof (proto as { arrayBuffer?: unknown }).arrayBuffer === "function"
+        ? (proto as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer
+        : function (this: Blob): Promise<ArrayBuffer> { return readBlobBytes(this); };
+    }
+  }
+  const S = glob.AbortSignal;
+  if (S) {
+    const proto = S.prototype as unknown as Record<PropertyKey, unknown>;
+    if (!proto[throwIfAborted_]) {
+      proto[throwIfAborted_] = typeof (proto as { throwIfAborted?: unknown }).throwIfAborted === "function"
+        ? (proto as { throwIfAborted: () => void }).throwIfAborted
+        : function (this: AbortSignal & { reason?: unknown }): void {
+            if (this.aborted) throw this.reason ?? new DOMException("signal is aborted without reason", "AbortError");
+          };
+    }
   }
 };
 

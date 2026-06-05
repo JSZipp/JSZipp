@@ -923,6 +923,18 @@ pnpm test
 pnpm build
 ```
 
+`pnpm test` runs the Vitest suite plus the compat smoke test against the source
+and built compat bundles. To additionally exercise the shipped bundle in a real
+browser through the demo UI, install the browser once and run the Playwright
+end-to-end smoke test (it builds first):
+
+```sh
+pnpm exec playwright install chromium
+pnpm run test:e2e
+```
+
+See [docs/testing.md](docs/testing.md) for what each layer proves.
+
 The npm package points at generated files under `dist/`. `prepack` runs the
 build and test suite before `pnpm pack` / `pnpm publish`, so the published
 tarball contains those generated artifacts even if the source repository omits

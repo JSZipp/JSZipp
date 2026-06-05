@@ -509,6 +509,9 @@
         els.compress.addEventListener("click", compressFiles);
         els.download.addEventListener("click", downloadZip);
         els.clear.addEventListener("click", clearFiles);
+        // Signal that the bundle loaded and listeners are bound. The e2e smoke
+        // test waits on this before interacting so it never races bootstrap.
+        document.body.dataset.ready = "true";
       }
 
       // Schedule a callback after the browser has had a chance to paint.
@@ -717,7 +720,10 @@
         link.href = url;
         link.download = state.archiveName;
         link.click();
-        URL.revokeObjectURL(url);
+        // Revoke on the next task, not synchronously: some engines (and headless
+        // automation) abort the download if the object URL is freed in the same
+        // tick as the click before the fetch for the blob has started.
+        setTimeout(() => URL.revokeObjectURL(url), 0);
       }
 
       function clearFiles() {

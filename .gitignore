@@ -5,3 +5,5 @@ npm-debug.log*
 /dist/
 /test/internal/
 /demo/jszipp.umd.js
+/.vscode/settings.json
+test-results

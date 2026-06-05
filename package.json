@@ -58,15 +58,19 @@
   ],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && rspack build && tsc -p tsconfig.types.json && node scripts/prune-dist-types.mjs",
-    "prepack": "pnpm run typecheck && pnpm run build && pnpm run test",
-    "test": "vitest run",
+    "prepack": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run test:compat-smoke",
+    "test": "vitest run && pnpm run test:compat-smoke",
     "typecheck": "tsc --noEmit",
     "pack:dry": "pnpm pack --dry-run",
+    "test:compat-smoke": "node scripts/compat-smoke-test.mjs",
+    "test:e2e": "pnpm run build && playwright test",
     "test:jszipp-npm-package": "node scripts/test-npm-package.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@rspack/cli": "^2.0.5",
     "@rspack/core": "^2.0.5",
+    "@swc/helpers": "^0.5.0",
     "@types/node": "^25.9.1",
     "@types/yauzl": "^2.10.3",
     "@types/yazl": "^3.3.1",

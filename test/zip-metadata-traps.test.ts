@@ -34,7 +34,7 @@ import { openZip, ZipWriter } from "../src/index";
  *                                    so all 55 traps are explicitly accounted
  *                                    for.
  *
- * To run only this file:   npx vitest run zip-metadata-traps
+ * To run only this file:   pnpm exec vitest run zip-metadata-traps
  */
 
 
@@ -67,7 +67,7 @@ strict-package rejects (the opt-in works):
 **OUT OF SCOPE (20 `it.skip`)** — symlinks, on-disk permissions, split/spanned, nested recursion, SFX/polyglot rebiasing, package-profile rules, etc., each skipped with a one-line reason so every trap number is explicitly accounted for.
 
 Run result against current code: **0 failed | 36 passed | 20 skipped**. Run just
-this file with `npx vitest run zip-metadata-traps`.
+this file with `pnpm exec vitest run zip-metadata-traps`.
 
 The four strict-package traps are resolved as an opt-in rather than a default
 change, so JSZipp's documented default reader contracts (duplicate-path

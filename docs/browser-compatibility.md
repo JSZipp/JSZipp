@@ -569,9 +569,14 @@ output.
      library code** — Node always has `globalThis` (and the harness sets `self`), so
      a missing `glob` stand-in cannot surface here; only a real engine that lacks
      `globalThis` exposes it (step 5).
-   - **The `Blob.prototype.arrayBuffer` FileReader fallback** — it needs a DOM
-     `FileReader`, which Node has no built-in for, so the harness uses
-     `Uint8Array` / stream sources, never a `Blob` source (step 5).
+   - **The `Blob.prototype.arrayBuffer` FileReader fallback on the compat floors** —
+     The modern build's Blob path IS tested in step 5's Playwright e2e: the demo
+     selects files via an `<input webkitdirectory>` and passes them as `Blob`/`File`
+     to `ZipWriter.add()`, which exercises `openZip(blob)` and the Blob.arrayBuffer
+     path in real Chromium. However, the CR61FF58 and CR86FF68 compat floors' fallback
+     to `FileReader` when native `Blob.arrayBuffer` is absent cannot be proven here
+     (Node has no DOM `FileReader`); that path is left to step 5's real-browser check
+     on an actual Chrome 61 / Firefox 58/68 (step 5).
    - **The `@@asyncIterator` divergence** — it only differs from
      `Symbol.asyncIterator` when the latter is undefined; deleting it process-wide
      would break the harness's own `for await`, so the divergent key is left to step

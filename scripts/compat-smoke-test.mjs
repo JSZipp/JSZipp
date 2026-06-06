@@ -23,9 +23,13 @@
 //   * The UMD wrapper's `globalObject` choice (§4.3). Node always has `globalThis`
 //     and we set `self`, so a wrapper that wrongly emitted bare `globalThis` would
 //     not surface here — only on a real engine that lacks it (§8.5).
-//   * The `Blob.prototype.arrayBuffer` FileReader fallback: it needs a DOM
-//     `FileReader`, which Node has no built-in for, so the harness uses Uint8Array /
-//     stream sources, never a Blob source.
+//   * The `Blob.prototype.arrayBuffer` FileReader fallback on the COMPAT floors: it
+//     needs a DOM `FileReader`, which Node has no built-in for, so the harness uses
+//     Uint8Array / stream sources only. The modern build's Blob path IS covered by the
+//     Playwright e2e test (demo/compress.html selects files via `<input>` and passes
+//     them as Blob/File to ZipWriter), which runs in a real Chromium. However, the
+//     CR61FF58 and CR86FF68 compat builds' FileReader fallback can only be proven by
+//     loading the UMD in an actual Chrome 61 / Firefox 58/68 respectively (§8.5).
 //   * The `@@asyncIterator` fallback key only diverges from `Symbol.asyncIterator`
 //     when the latter is undefined (Chrome 61). Deleting it process-wide would also
 //     break the harness's own `for await`, so the divergent key is left to the

@@ -12,12 +12,12 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        node-version: ['20']
+        node-version: ['>=22.14.0']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
         with:
-          version: '>=10.33.2'
+          version: '>=11.5.2'
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}

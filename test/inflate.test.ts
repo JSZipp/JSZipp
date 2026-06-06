@@ -93,6 +93,11 @@ describe("inflateRawDynamic (DecompressionStream deflate-raw polyfill core)", ()
     expect(eq(inflateRawDynamic(deflate(d, 9)), d)).toBe(true);
   });
 
+  it("enforces maxBytes before growing past the limit", () => {
+    const d = new Uint8Array(1024 * 1024).fill(0x20);
+    expect(() => inflateRawDynamic(deflate(d, 9), 1024)).toThrow(RangeError);
+  });
+
   it("scratch reuse does not leak state between different block types", () => {
     const dynamic = new TextEncoder().encode("dynamic ".repeat(7000)) as Uint8Array<ArrayBuffer>;
     const fixed = new TextEncoder().encode("fixed ".repeat(7000)) as Uint8Array<ArrayBuffer>;

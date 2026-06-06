@@ -12,7 +12,7 @@
 // range requests beyond what the demo needs, no security hardening.
 //
 // Usage:
-//   node scripts/serve-demo.mjs [--port 4173] [--root .]
+//   node scripts/serve-demo.mjs [--port 65077] [--root .]
 // Playwright starts it automatically via `webServer` in playwright.config.ts.
 
 import { createServer } from "node:http";
@@ -20,7 +20,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join, normalize, extname, resolve, sep } from "node:path";
 
 function parseArgs(argv) {
-  const args = { port: Number(process.env.PORT) || 4173, root: process.cwd() };
+  const args = { port: Number(process.env.PORT) || 65077, root: process.cwd() };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--port" && argv[i + 1]) args.port = Number(argv[++i]);
     else if (argv[i] === "--root" && argv[i + 1]) args.root = resolve(argv[++i]);

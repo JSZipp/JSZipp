@@ -222,10 +222,11 @@ by an actual browser). For each compat build it spawns a child process, deletes 
 floor's missing globals, loads the built UMD via global assignment, and runs real
 round-trips: a `ZipWriter → openZip` round-trip whose deflated entry forces the
 pure-JS inflater (native `DecompressionStream` removed), the writer's ponyfill
-`ReadableStream` piped into `readZipStream` `for await`, and an already-aborted
-signal on CR86FF68. The full procedure, the per-target deletion sets, and the
-explicit list of what a green run does **not** prove are documented canonically in
-[Browser compatibility → How to verify](browser-compatibility.md#8-how-to-verify-a-compatibility-change).
+`ReadableStream` piped into `readZipStream` `for await`, a lying-header
+`maxEntrySize` regression that must fail during compat inflate, and an
+already-aborted signal on CR86FF68. The full procedure, the per-target deletion
+sets, and the explicit list of what a green run does **not** prove are documented
+canonically in [Browser compatibility → How to verify](browser-compatibility.md#8-how-to-verify-a-compatibility-change).
 
 ### End-to-End Browser Smoke Test (Real Engine)
 

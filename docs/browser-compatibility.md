@@ -555,11 +555,13 @@ output.
    `<script>` would (global assignment), and runs real round-trips: a
    `ZipWriter → openZip` round-trip whose deflated entry forces the **pure-JS
    inflater** (native `DecompressionStream` is gone), the writer's ponyfill
-   `ReadableStream` piped into `readZipStream` `for await`, and — on CR86FF68, where
-   a native `AbortSignal` can exist — an already-aborted signal that must reject via
-   the `throwIfAborted_` seam. A green run is honest proof that the bundled polyfills
-   **actually wire up and run** — the exact class of regression the native-seam
-   suite cannot catch. See `testing.md` → *Compat smoke test*.
+   `ReadableStream` piped into `readZipStream` `for await`, a lying-header
+   `maxEntrySize` regression that must fail during compat inflate, and — on
+   CR86FF68, where a native `AbortSignal` can exist — an already-aborted signal
+   that must reject via the `throwIfAborted_` seam. A green run is honest proof
+   that the bundled polyfills **actually wire up and run** — the exact class of
+   regression the native-seam suite cannot catch. See `testing.md` → *Compat smoke
+   test*.
 
    What a green run does **not** prove (do not over-read it):
    - **Syntax** the floor cannot parse — Node's V8 parses `async function*`, `?.`,

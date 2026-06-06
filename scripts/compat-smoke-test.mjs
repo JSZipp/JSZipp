@@ -80,6 +80,15 @@ const STORED = "stored entry — must not need the inflater";
 // which forces the pure-JS inflater to run on read (native DecompressionStream is
 // removed). A short non-repetitive string could be stored instead and skip it.
 const DEFLATED = "JSZipp compat smoke ".repeat(400);
+const BOMB = "zip bomb guard ".repeat(10_000);
+
+function findSignature(bytes, sig) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = bytes.length - 4; i >= 0; i--) {
+    if (view.getUint32(i, true) === sig) return i;
+  }
+  throw new Error(`signature 0x${sig.toString(16)} not found`);
+}
 
 // ---------------------------------------------------------------------------
 // Child mode: run inside a process whose globals have already been stripped.
@@ -153,6 +162,30 @@ async function runChild(targetName) {
     pass("ZipWriter -> openZip round-trip (stored + inflater-backed deflate)");
   } catch (err) {
     fail("ZipWriter -> openZip round-trip", err?.message || String(err));
+  }
+
+  // 2b) A lying central-directory size must not let the pure-JS compat inflater
+  //     materialize output beyond maxEntrySize before the caller sees the breach.
+  try {
+    const w = new ZipWriter({ outputAs: "uint8array" });
+    await w.add({ path: "bomb.txt", data: BOMB });
+    const bytes = await w.close();
+    const central = findSignature(bytes, 0x02014b50);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(central + 24, 100, true);
+
+    const zip = await openZip(bytes, { maxEntrySize: 1024 });
+    let threw = false;
+    try {
+      await zip.get("bomb.txt")?.bytes();
+    } catch (err) {
+      threw = err instanceof RangeError;
+    } finally {
+      await zip.close();
+    }
+    if (!threw) throw new Error("lying deflate entry did not trip maxEntrySize during compat inflate");
+    pass("lying deflate header trips maxEntrySize during compat inflate");
+  } catch (err) {
+    fail("lying-header maxEntrySize guard", err?.message || String(err));
   }
 
   // 3) Poly ReadableStream -> readZipStream `for await`. The writer's "stream"

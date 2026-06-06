@@ -420,7 +420,7 @@ let I_fixedReady = false;
 
 // Exported for tests; not referenced by index.ts, so it carries no bundle weight
 // beyond the DecompressionStream polyfill that already uses it.
-export const inflateRawDynamic = (input: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> => {
+export const inflateRawDynamic = (input: Uint8Array<ArrayBuffer>, maxBytes?: number): Uint8Array<ArrayBuffer> => {
   if (!I_lLut) {
     const table = new Uint16Array(32768 + 32768 + 320 + 512 + 32);
     I_lLut = table.subarray(0, 32768);
@@ -440,12 +440,15 @@ export const inflateRawDynamic = (input: Uint8Array<ArrayBuffer>): Uint8Array<Ar
   // grow by 2× (which copies ~2× the final size total, vs ~3× for 1.5×, and wins
   // on the rare highly-compressed entry). A small floor also means a held result
   // retains little slack, since the return below is a view over this buffer.
-  let out = new Uint8Array(Math.max(4096, input.length * 4));
+  const initialSize = Math.max(4096, input.length * 4);
+  let out = new Uint8Array(maxBytes === undefined ? initialSize : Math.floor(Math.min(initialSize, maxBytes)));
   let outIdx = 0;
   const ensure = (need: number): void => {
     const required = outIdx + need;
+    if (maxBytes !== undefined && required > maxBytes) throw new RangeError(`Inflated output exceeds limit of ${maxBytes} bytes`);
     if (required > out.length) {
       let n = out.length;
+      if (n === 0) n = 1;
       do { n *= 2; } while (n < required);
       const grown = new Uint8Array(n);
       grown.set(out);
@@ -632,12 +635,12 @@ const concatChunks = (chunks: Uint8Array[]): Uint8Array<ArrayBuffer> => {
 // flush — no need to stream incrementally. Built on the ponyfill TransformStream,
 // so ponyfillReadable.pipeThrough(new DecompressionStreamPoly(...)) interoperates.
 class DecompressionStreamPoly extends (TransformStreamPoly as unknown as typeof TransformStream)<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>> {
-  constructor(format: string) {
+  constructor(format: string, maxBytes?: number) {
     if (format !== "deflate-raw") throw new TypeError(`Unsupported DecompressionStream format: ${format}`);
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     super({
       transform(chunk: Uint8Array<ArrayBuffer>) { chunks.push(chunk); },
-      flush(controller) { controller.enqueue(inflateRawDynamic(concatChunks(chunks))); }
+      flush(controller) { controller.enqueue(inflateRawDynamic(concatChunks(chunks), maxBytes)); }
     });
   }
 }

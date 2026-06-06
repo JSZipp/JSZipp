@@ -13,7 +13,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Prerequisites: run `pnpm run build` first so `dist/jszipp.mjs` exists. The
 // `test:e2e` package script chains the build for you.
 
-const PORT = Number(process.env.PORT) || 4173;
+const PORT = Number(process.env.PORT) || 65077;
 const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({

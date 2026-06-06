@@ -1946,7 +1946,10 @@ const inflateRaw = async (input: Uint8Array<ArrayBuffer>, size: number, maxBytes
     });
     // Only the construction of the transform can fail for a "feature unsupported"
     // reason; that is the single case that should be reported as NotSupported.
-    decompressor = stream.pipeThrough(new StreamCtor("deflate-raw")) as ReadableStream<Uint8Array<ArrayBuffer>>;
+    // Compat builds accept the internal second argument and enforce it inside the
+    // pure-JS inflater; native DecompressionStream ignores the extra argument.
+    const BoundedStreamCtor = StreamCtor as typeof DecompressionStream & { new(format: string, maxBytes?: number): DecompressionStream };
+    decompressor = stream.pipeThrough(new BoundedStreamCtor("deflate-raw", maxBytes)) as ReadableStream<Uint8Array<ArrayBuffer>>;
   } catch (error) {
     throw new DOMException(DEV ? `DecompressionStream does not support deflate-raw: ${error instanceof Error ? error.message : String(error)}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
   }

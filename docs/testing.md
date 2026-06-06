@@ -257,13 +257,12 @@ What a green run does **not** prove: it runs Playwright's bundled Chromium, a
 *modern* engine, so it does not exercise the legacy floors (Chrome 61 / Firefox 58
 or 86 / 68) — those still need the manual real-browser check in
 browser-compatibility.md §8.5 — nor the UMD wrapper (the demo loads the ESM build).
-However, the Blob path **is** exercised here: the demo selects files via the file
-input control (`<input webkitdirectory>`), which creates `File` / `Blob` objects
-and passes them to `ZipWriter.add()`, so the Blob input and `openZip(blob)` paths
-run in the real browser. The compat floors' `Blob.prototype.arrayBuffer` FileReader
-fallback (when native `Blob.arrayBuffer` is absent on CR61FF58 / CR86FF68) would
-need to be tested in an actual Chrome 61 / Firefox 58 / 68 respectively, not in
-Chromium.
+However, the Blob/File input path in `ZipWriter.add()` **is** exercised here: the
+demo selects files via the file input control (`<input webkitdirectory>`), which
+creates `File` / `Blob` objects and passes them to the writer in the real browser.
+The compat floors' `Blob.prototype.arrayBuffer` FileReader fallback (when native
+`Blob.arrayBuffer` is absent on CR61FF58 / CR86FF68) would need to be tested in an
+actual Chrome 61 / Firefox 58 / 68 respectively, not in Chromium.
 Run it after a build:
 
 ```sh

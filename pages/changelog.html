@@ -1,36 +1,312 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Changelog - JSZipp</title><link rel="icon" type="image/png" href="../assets/icon64.png" /><link rel="stylesheet" href="common/site.css" /><script defer src="common/site.js"></script></head>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Changelog - JSZipp</title>
+    <meta
+      name="description"
+      content="Release notes for JSZipp, the browser-focused ZIP reader and writer with safe defaults, Web Streams, ZIP64, metadata preservation, and legacy-browser compatibility builds."
+    />
+    <link rel="icon" type="image/png" href="../assets/icon64.png" />
+    <link rel="stylesheet" href="common/site.css" />
+    <script defer src="common/site.js"></script>
+  </head>
   <body data-page="changelog">
     <header data-site-header></header>
-    <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
-      <section class="hero"><span class="eyebrow">Release notes</span><h1>Changelog</h1><p class="lede">A scaffold for public release notes. Keep entries short, dated, and grouped by version.</p></section>
-      <h2>Unreleased</h2>
-      <div class="callout"><strong>In development.</strong> Breaking changes are still acceptable before the first publish.</div>
-      <ul>
-        <li><strong>Added</strong> <code>meta.dosAttributes</code>: the MS-DOS attribute byte (low 8 bits of external attributes). Range <code>0x00</code>–<code>0xff</code>; the directory bit <code>0x10</code> must match the entry kind. Allowed for the <code>Dos</code>, <code>Dos | Ntfs</code>, and <code>Dos | Unix | Ntfs</code> timestamp modes; rejected for <code>Dos | Unix</code>.</li>
-        <li><strong>Added</strong> <code>explicitDirectoryEntries</code> writer option (on <code>ZipEncoderOptions</code>, default <code>false</code>). When <code>true</code>, parent directories implied by an entry's path are materialized as standalone entries.</li>
-        <li><strong>Changed</strong> NTFS timestamp mode no longer requires <code>meta.createdAt</code> / <code>meta.lastAccess</code>; each missing value now defaults to <code>meta.modifiedAt</code>.</li>
-        <li><strong>Changed (breaking)</strong> reader entries no longer expose a pre-decoded <code>unixMode</code>. Derive it from <code>externalAttributes &gt;&gt;&gt; 16</code> (Unix mode) and <code>externalAttributes &amp; 0xff</code> (DOS attributes). Reduces reader bundle size.</li>
-        <li><strong>Changed</strong> <code>meta.unixPermissions</code> now requires the Unix timestamp mode (<code>timestamps</code> must include <code>TimestampMode.Unix</code>); otherwise it is rejected.</li>
-        <li><strong>Added</strong> option range validation: <code>timestamps</code> must be a bitmask in <code>0</code>–<code>7</code>; entry timestamps must be valid dates on or after 1970 (negative/<code>NaN</code> rejected); reader <code>maxArchiveSize</code> / <code>maxEntrySize</code> must be non-negative and finite.</li>
-        <li><strong>Docs</strong> new "Timestamp Modes and Archive Size" section; clarified that spec-related options belong on <code>ZipEncoderOptions</code>, not <code>ZipWriterOptions</code>.</li>
-      </ul>
-      <h2>1.0.0</h2>
-      <div class="callout"><strong>Initial public documentation baseline.</strong> The package currently reports version <code>1.0.0</code> in <code>package.json</code>.</div>
-      <ul>
-        <li>Browser-focused ZIP writer with <code>Blob</code>, <code>Response</code>, <code>ReadableStream</code>, <code>Uint8Array</code>, and <code>ArrayBuffer</code> output.</li>
-        <li>Random-access ZIP reader through <code>openZip()</code>.</li>
-        <li>Strict path handling, <code>strict-package</code> mode, anti-zip-bomb caps, ZIP64, metadata handling, and filename decoding support.</li>
-        <li>TypeScript declarations and dependency-free runtime package.</li>
-      </ul>
-      <h2>Maintenance format</h2>
-      <pre><code>## x.y.z - YYYY-MM-DD
-- Added ...
-- Changed ...
-- Fixed ...
-- Security ...</code></pre>
-    </main></div>
+    <div class="layout">
+      <aside class="sidebar" data-site-sidebar></aside>
+      <main class="content">
+        <section class="hero">
+          <span class="eyebrow">Release notes</span>
+          <h1>Changelog</h1>
+          <p class="lede">
+            Versioned changes for <code>web-jszipp</code>. Entries are grouped by release and focus
+            on public behavior, compatibility, safety, packaging, documentation, and validation.
+          </p>
+        </section>
+
+        <h2>Unreleased</h2>
+        <div class="callout">
+          <strong>No pending public release notes.</strong>
+          Add future changes here before cutting the next package version.
+        </div>
+        <ul>
+          <li>No unreleased user-facing changes are documented yet.</li>
+        </ul>
+
+        <h2>1.0.6 - 2026-06-07</h2>
+        <div class="callout">
+          <strong>Current package version.</strong>
+          This release fixes legacy compatibility and safety gaps, strengthens release validation,
+          and updates docs to match the implemented browser, stream, and test behavior.
+        </div>
+
+        <h3>Fixed</h3>
+        <ul>
+          <li>
+            Enforced <code>maxEntrySize</code> during legacy raw-DEFLATE inflation, so a ZIP entry
+            with an understated uncompressed-size header cannot fully expand beyond the configured
+            cap before JSZipp detects the problem.
+          </li>
+          <li>
+            Passed the inflated-size cap through the compat
+            <code>DecompressionStream</code> polyfill path while preserving native
+            <code>DecompressionStream</code> behavior in modern builds.
+          </li>
+          <li>
+            Delayed demo object-URL revocation until the next task, avoiding engines and headless
+            automation aborting a download when the URL is revoked in the same tick as the click.
+          </li>
+          <li>
+            Added a demo readiness marker so browser end-to-end tests wait for module bootstrap and
+            event listener binding before interacting with the UI.
+          </li>
+        </ul>
+
+        <h3>Changed</h3>
+        <ul>
+          <li>
+            Clarified legacy bundle behavior for stream, <code>Blob</code>, <code>File</code>, and
+            <code>Response</code> interop. Compat builds may buffer polyfilled streams before
+            constructing <code>Blob</code> or <code>Response</code> objects to avoid native brand-check
+            corruption on older engines.
+          </li>
+          <li>
+            Updated the benchmark page so JSZipp is labeled as a CDN build when the benchmark runs
+            from the public GitHub Pages origin, and as a local build otherwise.
+          </li>
+          <li>
+            Refactored test scripts so <code>pnpm test</code> runs the Vitest unit suite only, while
+            <code>pnpm run test:all</code> runs the full build, unit, and compatibility smoke flow.
+          </li>
+          <li>
+            Updated <code>prepack</code> to use the full validation path without duplicating
+            compatibility smoke runs.
+          </li>
+        </ul>
+
+        <h3>Added</h3>
+        <ul>
+          <li>
+            Added CI coverage for install, typecheck, <code>test:all</code>, Playwright browser
+            installation, and <code>test:e2e</code>.
+          </li>
+          <li>
+            Added failure artifact upload after end-to-end tests so Playwright traces and screenshots
+            can be captured when browser validation fails.
+          </li>
+          <li>
+            Added or updated compat smoke coverage for the built CR61FF58 and CR86FF68 legacy bundles.
+          </li>
+          <li>
+            Added a lying-header <code>maxEntrySize</code> regression test for the compat smoke suite.
+          </li>
+          <li>
+            Added direct inflater regression coverage for bounded compat inflation.
+          </li>
+          <li>
+            Added <code>vitest.config.ts</code> so Vitest does not accidentally discover Playwright
+            end-to-end tests.
+          </li>
+          <li>
+            Added browser-compatibility documentation describing the polyfill seam, syntax-target
+            rules, Web Streams ponyfills, DEFLATE inflater fallback, private-symbol installs,
+            and manual verification expectations for legacy browser floors.
+          </li>
+        </ul>
+
+        <h3>Documentation</h3>
+        <ul>
+          <li>
+            Updated README testing instructions to distinguish the source-level Vitest suite from the
+            built-bundle compatibility smoke tests and Playwright end-to-end browser smoke test.
+          </li>
+          <li>
+            Updated testing documentation to describe what the unit suite, compat smoke test, and
+            Playwright demo test prove, and what they intentionally do not prove.
+          </li>
+          <li>
+            Clarified the modern and legacy browser model: the default build targets modern browser
+            APIs, while legacy subpaths keep the same public API and add targeted compatibility code.
+          </li>
+          <li>
+            Documented legacy memory trade-offs around stream-to-<code>Blob</code> and
+            stream-to-<code>Response</code> conversion.
+          </li>
+        </ul>
+
+        <h3>Compatibility</h3>
+        <ul>
+          <li>
+            Kept the default modern package entry point focused on native browser primitives and
+            <code>DecompressionStream</code>.
+          </li>
+          <li>
+            Kept legacy package subpaths available for older browser pairs:
+            <code>web-jszipp/browser-legacy/cr61ff58</code> and
+            <code>web-jszipp/browser-legacy/cr86ff68</code>.
+          </li>
+          <li>
+            Preserved the public API across modern and legacy builds:
+            <code>ZipWriter</code>, <code>ZipTransformStream</code>,
+            <code>openZip</code>, <code>readZipStream</code>, and
+            <code>TimestampMode</code>.
+          </li>
+        </ul>
+
+        <h3>Breaking changes</h3>
+        <ul>
+          <li>No breaking public API changes.</li>
+        </ul>
+
+        <h2>Earlier 1.0.x patch tags</h2>
+        <div class="callout">
+          <strong>Summarized by the initial baseline.</strong>
+          Tags <code>v1.0.2</code> through <code>v1.0.5</code> predate the maintained changelog
+          format on this page. Their public API baseline is summarized below instead of expanded as
+          separate historical entries.
+        </div>
+
+        <h2>1.0.0 - Initial public documentation baseline</h2>
+        <div class="callout">
+          <strong>Initial stable baseline.</strong>
+          This release established the browser-focused ZIP reader/writer API and the public
+          documentation structure.
+        </div>
+
+        <h3>Added</h3>
+        <ul>
+          <li>
+            Browser-focused ZIP writer through <code>ZipWriter</code>, with
+            <code>Blob</code>, <code>Response</code>, <code>ReadableStream</code>,
+            <code>Uint8Array</code>, and <code>ArrayBuffer</code> output shapes.
+          </li>
+          <li>
+            Stream-shaped archive writing through <code>ZipTransformStream</code>.
+          </li>
+          <li>
+            Random-access ZIP reading through <code>openZip()</code>, including
+            <code>entries</code>, <code>get(path)</code>, and reusable entry readers.
+          </li>
+          <li>
+            Forward-style archive iteration through <code>readZipStream()</code>.
+          </li>
+          <li>
+            Entry helpers for <code>text()</code>, <code>bytes()</code>,
+            <code>arrayBuffer()</code>, and <code>stream()</code>.
+          </li>
+          <li>
+            Safe reader defaults that reject path traversal, absolute paths, drive-letter paths,
+            drive-relative paths, backslashes, and NUL-byte paths unless the caller opts into a
+            different path policy.
+          </li>
+          <li>
+            <code>strict-package</code> reader profile for untrusted package-like archives, including
+            duplicate-path and Unicode-normalization collision checks.
+          </li>
+          <li>
+            Configurable anti-zip-bomb limits through <code>maxArchiveSize</code> and
+            <code>maxEntrySize</code>.
+          </li>
+          <li>
+            ZIP64 reading and writing with <code>zip64: "auto"</code>,
+            <code>"force"</code>, and <code>"off"</code> writer behavior.
+          </li>
+          <li>
+            Store and DEFLATE ZIP entry support, including JSZipp's in-repository raw-DEFLATE encoder
+            and platform or compat inflater paths for reading deflated entries.
+          </li>
+          <li>
+            Archive comments, entry comments, custom extra fields, external attributes, Unix
+            permission bits, DOS attribute bits, DOS timestamps, Extended Timestamp extras, and NTFS
+            timestamp extras.
+          </li>
+          <li>
+            Filename decoding support for UTF-8, CP437, <code>TextDecoder</code>-based legacy
+            encodings, and CRC-verified Info-ZIP Unicode Path extra fields.
+          </li>
+          <li>
+            Abort and progress hooks for long-running writer and reader work.
+          </li>
+          <li>
+            TypeScript declarations and a dependency-free runtime package.
+          </li>
+          <li>
+            Default namespace export <code>JSZipp</code> plus named exports for the public runtime API.
+          </li>
+          <li>
+            Browser-oriented documentation pages for overview, installation, FAQ, API reference,
+            examples, performance and limitations, upgrade guidance, bug reporting, contribution, and
+            sponsorship.
+          </li>
+          <li>
+            Interactive browser demo and benchmark pages.
+          </li>
+        </ul>
+
+        <h3>Compatibility baseline</h3>
+        <ul>
+          <li>
+            Modern build for browser APIs including <code>ReadableStream</code>,
+            <code>TransformStream</code>, <code>Blob</code>, <code>AbortSignal</code>,
+            <code>TextEncoder</code>, <code>TextDecoder</code>, and native
+            <code>DecompressionStream</code> for deflated reads.
+          </li>
+          <li>
+            Legacy browser subpaths for older browser pairs that need additional syntax targeting and
+            runtime polyfills while preserving the same public API.
+          </li>
+          <li>
+            Production bundles keep observable exception categories stable while shortening error
+            messages to compact codes such as <code>E_PATH</code>, <code>E_LIMIT</code>,
+            <code>E_STRUCTURE</code>, <code>E_ZIP64</code>, and <code>E_UNSUPPORTED</code>.
+          </li>
+        </ul>
+
+        <h2>Release note policy</h2>
+        <ul>
+          <li>
+            Keep this page tied to shipped package versions. Do not leave completed release work under
+            <code>Unreleased</code> after bumping <code>package.json</code>.
+          </li>
+          <li>
+            Prefer categories in this order when relevant:
+            <strong>Security</strong>, <strong>Fixed</strong>, <strong>Changed</strong>,
+            <strong>Added</strong>, <strong>Documentation</strong>, <strong>Compatibility</strong>,
+            and <strong>Breaking changes</strong>.
+          </li>
+          <li>
+            Call out public API breaks explicitly. Internal test, CI, and documentation changes should
+            still be listed when they affect release confidence or user-facing guidance.
+          </li>
+        </ul>
+
+        <h2>Maintenance format</h2>
+        <pre><code>&lt;h2&gt;x.y.z - YYYY-MM-DD&lt;/h2&gt;
+&lt;div class="callout"&gt;&lt;strong&gt;Release summary.&lt;/strong&gt; One-sentence impact summary.&lt;/div&gt;
+
+&lt;h3&gt;Fixed&lt;/h3&gt;
+&lt;ul&gt;
+  &lt;li&gt;Fixed ...&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Changed&lt;/h3&gt;
+&lt;ul&gt;
+  &lt;li&gt;Changed ...&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Added&lt;/h3&gt;
+&lt;ul&gt;
+  &lt;li&gt;Added ...&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Breaking changes&lt;/h3&gt;
+&lt;ul&gt;
+  &lt;li&gt;No breaking public API changes.&lt;/li&gt;
+&lt;/ul&gt;</code></pre>
+      </main>
+    </div>
     <footer class="footer" data-site-footer></footer>
   </body>
 </html>

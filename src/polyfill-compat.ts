@@ -449,7 +449,9 @@ export const inflateRawDynamic = (input: Uint8Array<ArrayBuffer>, maxBytes?: num
     if (required > out.length) {
       let n = out.length;
       if (n === 0) n = 1;
-      do { n *= 2; } while (n < required);
+      do {
+        n = maxBytes === undefined ? n * 2 : Math.min(n * 2, maxBytes);
+      } while (n < required);
       const grown = new Uint8Array(n);
       grown.set(out);
       out = grown;

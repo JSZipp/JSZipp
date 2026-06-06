@@ -7,7 +7,7 @@ the public API**.
 
 Read this before touching anything under `src/polyfill*.ts`, the
 `CR61FF58` / `CR86FF68` build flags, or the syntax targets in
-`rspack_config.mjs`. A change that looks harmless in one build can silently break
+`rspack.config.mjs`. A change that looks harmless in one build can silently break
 a different one, because each target ships a different mix of native features and
 polyfills.
 
@@ -43,7 +43,7 @@ is the single most common source of mistakes.
    or by reading globals defensively (feature detection through a safe stand-in).
 
 > Rule of thumb: if the fix is "transpile it differently," it is a **syntax** gap
-> and belongs in `rspack_config.mjs`. If the fix is "provide or detect an API," it
+> and belongs in `rspack.config.mjs`. If the fix is "provide or detect an API," it
 > is a **runtime** gap and belongs in the polyfill modules.
 
 ---
@@ -131,7 +131,7 @@ and ensures it runs before user code.
 
 ---
 
-## 4. Build configuration (`rspack_config.mjs`)
+## 4. Build configuration (`rspack.config.mjs`)
 
 ### 4.1 Syntax targets, and the es2017 trap
 

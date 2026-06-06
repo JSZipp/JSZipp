@@ -923,8 +923,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm test` runs the Vitest suite plus the compat smoke test against the source
-and built compat bundles. To additionally exercise the shipped bundle in a real
+`pnpm test` runs the Vitest suite only. The compat smoke test requires built bundles — run `pnpm run test:all` (or `pnpm run build && pnpm run test:compat-smoke`) to exercise the compatibility UMD bundles. To additionally exercise the shipped bundle in a real
 browser through the demo UI, install the browser once and run the Playwright
 end-to-end smoke test (it builds first):
 

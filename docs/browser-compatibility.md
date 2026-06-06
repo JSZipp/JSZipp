@@ -621,12 +621,18 @@ output.
   own code needs. It does not provide `Promise`, `Symbol`, `Map`, `TypedArray`,
   `TextEncoder`/`TextDecoder`, etc.; the floor engines already have them. An app
   targeting something below the floors must bring its own core polyfills.
-- **`new Response(stream)` on legacy engines.** `outputAs: "blob" | "response"`
-  hands the writer's `ReadableStream` to a native `Response`. A ponyfill stream is
-  not a native `ReadableStream`, so this behaves exactly as it did with
-  `web-streams-polyfill` (no better, no worse). On engines whose `Response` does
-  not accept the writer's stream, prefer `outputAs: "uint8array"` /
-  `"arraybuffer"`, which fully materialize bytes.
+- **`new Response(stream)` on legacy engines.** Historically, passing the writer's
+  polyfilled `ReadableStream` directly into a native `Response` could silently
+  corrupt the body: a poly stream is not a native `ReadableStream` and naive
+  handoff yields a body of the literal text `"[object Object]"` instead of the
+  archive bytes. To prevent that, the seam exposes `responseAcceptsStream_`
+  (modern `true`, compat `false`) and the writer's `close()` drains the poly
+  stream to bytes and constructs the `Blob`/`Response` from those bytes when the
+  platform will not accept the poly stream (see §5.8). The remaining residual
+  risk is memory usage: draining materializes the entire archive in memory on
+  legacy engines for `outputAs: "blob"` / `"response"`. If memory is a
+  concern, prefer `outputAs: "uint8array"` / `"arraybuffer"`, which explicitly
+  return materialized bytes and make the memory trade-off explicit.
 - **The Node test suite runs the native seam.** It cannot, by itself, catch a
   legacy-only regression. Two checks cover the two classes: the transpiled-syntax
   audit (§8.3) guards against **syntax** the floor cannot parse, and the compat

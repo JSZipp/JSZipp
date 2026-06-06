@@ -58,8 +58,9 @@
   ],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && rspack build && tsc -p tsconfig.types.json && node scripts/prune-dist-types.mjs",
-    "prepack": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run test:compat-smoke",
-    "test": "vitest run && pnpm run test:compat-smoke",
+    "prepack": "pnpm run typecheck && pnpm run test:all",
+    "test": "vitest run",
+    "test:all": "pnpm run build && pnpm run test && pnpm run test:compat-smoke",
     "typecheck": "tsc --noEmit",
     "pack:dry": "pnpm pack --dry-run",
     "test:compat-smoke": "node scripts/compat-smoke-test.mjs",

@@ -94,7 +94,7 @@ const base = {
 // oldest engine in the pair (Chrome 61 ~ ES2017 -> target ES2015; Chrome 86 /
 // Firefox 68 -> ES2019). Runtime Web-API gaps are covered by the bundled
 // polyfill; this only addresses syntax level.
-const compatBase = (flag, esTarget, ecma) => ({
+const compatBase = (flag, esTarget, ecma, externalHelpers = false) => ({
   ...base,
   target: ["web", esTarget],
   plugins: [
@@ -105,7 +105,10 @@ const compatBase = (flag, esTarget, ecma) => ({
     rules: [{
       test: /\.ts$/,
       type: "javascript/auto",
-      use: { loader: "builtin:swc-loader", options: { jsc: { parser: { syntax: "typescript" }, target: esTarget } } }
+      use: {
+        loader: "builtin:swc-loader",
+        options: { jsc: { parser: { syntax: "typescript" }, target: esTarget }, externalHelpers }
+      }
     }]
   }
 });
@@ -150,30 +153,30 @@ export default defineConfig([
   },
   // ---- Compat: CR61FF58 (min Chrome 61 / Firefox 58) ----
   {
-    ...compatBase("CR61FF58", "es2017", 2017),
+    ...compatBase("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
     experiments: { outputModule: true },
     output: { filename: "jszipp.mjs", path: cr61ff58Dist, library: { type: "modern-module" } }
   },
   {
-    ...compatBase("CR61FF58", "es2017", 2017),
+    ...compatBase("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
-    output: { filename: "jszipp.umd.js", path: cr61ff58Dist, globalObject: "globalThis", library: umd("JSZipp") }
+    output: { filename: "jszipp.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZipp") }
   },
   {
-    ...compatBase("CR61FF58", "es2017", 2017),
+    ...compatBase("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
     output: { filename: "jszipp.cjs", path: cr61ff58Dist, library: cjs }
   },
   {
-    ...compatBase("CR61FF58", "es2017", 2017),
+    ...compatBase("CR61FF58", "es2015", 2015, true),
     entry: "./src/reader.ts",
-    output: { filename: "jszipp.reader.umd.js", path: cr61ff58Dist, globalObject: "globalThis", library: umd("JSZippReader") }
+    output: { filename: "jszipp.reader.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippReader") }
   },
   {
-    ...compatBase("CR61FF58", "es2017", 2017),
+    ...compatBase("CR61FF58", "es2015", 2015, true),
     entry: "./src/writer.ts",
-    output: { filename: "jszipp.writer.umd.js", path: cr61ff58Dist, globalObject: "globalThis", library: umd("JSZippWriter") }
+    output: { filename: "jszipp.writer.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippWriter") }
   },
   // ---- Compat: CR86FF68 (min Chrome 86 / Firefox 68) ----
   {

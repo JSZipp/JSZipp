@@ -204,6 +204,77 @@ Legacy filename decoding is tested for:
 The tests clear the UTF-8 flag and patch filename bytes to simulate archives
 written by non-UTF-8 ZIP tools.
 
+### Compat Smoke Test (Legacy Bundles)
+
+The Vitest suite and the typecheck both run the **source** tree, which uses the
+native polyfill seam (`polyfill.ts`). They therefore cannot prove that a *legacy*
+bundle works on its floor: a polyfill can be bundled yet never actually wire up, or
+a ponyfill stream can fail to `pipeThrough` the inflater. The compat smoke test
+(`scripts/compat-smoke-test.mjs`, run via `pnpm run test:compat-smoke` after a
+build) closes that gap.
+
+It is **not a real browser**: it runs in Node on a modern V8 and *emulates* a floor
+by deleting the native Web-API globals that floor's weaker engine lacks before the
+bundle loads, so the lookups miss exactly as the old engine's would. That makes it
+a faithful test of the **runtime-API gap only** — not the syntax gap (covered by
+the transpiled-syntax audit) and not the UMD wrapper or `FileReader` paths (covered
+by an actual browser). For each compat build it spawns a child process, deletes the
+floor's missing globals, loads the built UMD via global assignment, and runs real
+round-trips: a `ZipWriter → openZip` round-trip whose deflated entry forces the
+pure-JS inflater (native `DecompressionStream` removed), the writer's ponyfill
+`ReadableStream` piped into `readZipStream` `for await`, a lying-header
+`maxEntrySize` regression that must fail during compat inflate, and an
+already-aborted signal on CR86FF68. The full procedure, the per-target deletion
+sets, and the explicit list of what a green run does **not** prove are documented
+canonically in [Browser compatibility → How to verify](browser-compatibility.md#8-how-to-verify-a-compatibility-change).
+
+### End-to-End Browser Smoke Test (Real Engine)
+
+The Vitest suite runs the source tree and the compat smoke test runs the built
+compat bundles in Node with floor globals deleted. Neither loads the **shipped
+ESM bundle in a real browser engine** through the public demo UI — historically a
+manual step (see browser-compatibility.md §8.5). The Playwright suite under `e2e/`
+automates exactly that one gap.
+
+It drives the `demo/compress.html` demo, which imports the real
+`dist/jszipp.mjs`, in headless Chromium. A small zero-dependency static server
+(`scripts/serve-demo.mjs`) serves the repository root so the demo's relative
+`import("../dist/jszipp.mjs")` resolves over HTTP with a JavaScript MIME type; a
+`file://` origin cannot load the module. `playwright.config.ts` starts that server
+through its `webServer` option.
+
+`e2e/compress.spec.ts` selects the `e2e/fixtures/` folder, exercises the
+compression-level control, clicks **Compress**, and captures the resulting
+download. The downloaded archive is then re-read with **yauzl** — an independent
+reader, the same cross-tool strategy used for fixtures elsewhere — so a green run
+means the bytes the browser produced are a structurally valid ZIP, not merely
+something JSZipp can read back. The spec asserts entry names and content, that the
+balanced level deflates (method 8) while the store level does not (method 0), and
+that **Clear** resets the demo. The demo sets a `data-ready` flag once its module
+bootstrap finishes so the test never races the listeners.
+
+What a green run does **not** prove: it runs Playwright's bundled Chromium, a
+*modern* engine, so it does not exercise the legacy floors (Chrome 61 / Firefox 58
+or 86 / 68) — those still need the manual real-browser check in
+browser-compatibility.md §8.5 — nor the UMD wrapper (the demo loads the ESM build).
+However, the Blob/File input path in `ZipWriter.add()` **is** exercised here: the
+demo selects files via the file input control (`<input webkitdirectory>`), which
+creates `File` / `Blob` objects and passes them to the writer in the real browser.
+The compat floors' `Blob.prototype.arrayBuffer` FileReader fallback (when native
+`Blob.arrayBuffer` is absent on CR61FF58 / CR86FF68) would need to be tested in an
+actual Chrome 61 / Firefox 58 / 68 respectively, not in Chromium.
+Run it after a build:
+
+```sh
+pnpm run build
+pnpm run test:e2e
+```
+
+`test:e2e` chains the build for you, then runs `playwright test`. The browser
+binary is provisioned once with `pnpm exec playwright install chromium`. Firefox and
+WebKit projects are present but commented out in the config; enable them (and
+`pnpm exec playwright install firefox webkit`) for broader coverage in CI.
+
 ## Validation Style
 
 The suite uses several validation strategies:
@@ -239,7 +310,10 @@ relevant. Examples include encrypted entries and unsupported compression methods
 Deflate decompression depends on the platform `DecompressionStream("deflate-raw")`.
 The suite validates normal and corrupt-stream behavior in the current test
 environment, but it does not exhaustively simulate every browser implementation
-or a runtime where `DecompressionStream` is missing or partially implemented.
+or a runtime where `DecompressionStream` is missing or partially implemented. The
+compat smoke test (above) does exercise the **pure-JS inflater** that replaces a
+missing `DecompressionStream` on the legacy bundles, but only in a Node faithful
+emulation, not in every real engine.
 
 ### Internal Defensive Branches
 
@@ -285,11 +359,29 @@ Run the test suite with:
 pnpm test
 ```
 
+The Vitest suite runs the **source** tree, i.e. the native polyfill seam. To prove
+the legacy compat bundles actually run on their floors, build first and run the
+compat smoke test (see *Compat smoke test* below):
+
+```sh
+pnpm run build
+pnpm run test:compat-smoke
+```
+
 Useful adjacent checks are:
 
 ```sh
 pnpm run typecheck
 pnpm run build
+```
+
+To exercise the shipped bundle in a real browser through the demo UI, build then
+run the Playwright end-to-end smoke test (see *End-to-end browser smoke test*
+above):
+
+```sh
+pnpm run build
+pnpm run test:e2e
 ```
 
 ## Maintenance Notes

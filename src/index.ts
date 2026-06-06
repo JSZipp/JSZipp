@@ -39,6 +39,9 @@ const {
   TransformStream_,
   ReadableStream_,
   isReadableStream_,
+  arrayBuffer_,
+  responseAcceptsStream_,
+  throwIfAborted_,
   installPolyfills: installPolyfills_
 } = polyfill_;
 installPolyfills_();
@@ -662,8 +665,17 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
     for (const chunk of this.encoder.close()) this.controller?.enqueue(chunk);
     this.controller?.close();
 
-    if (this.outputAs === "blob") return new Response(this.output, { headers: { "Content-Type": this.mimeType } }).blob() as Promise<ZipWriterCloseResult<T>>;
-    if (this.outputAs === "response") return new Response(this.output, { headers: { "Content-Type": this.mimeType } }) as ZipWriterCloseResult<T>;
+    if (this.outputAs === "blob") {
+      return responseAcceptsStream_
+        ? new Response(this.output, { headers: { "Content-Type": this.mimeType } }).blob() as Promise<ZipWriterCloseResult<T>>
+        : new Blob([await readStream(this.output, this.encoder.signal)], { type: this.mimeType }) as ZipWriterCloseResult<T>;
+    }
+    if (this.outputAs === "response") {
+      const body = responseAcceptsStream_
+        ? this.output
+        : await readStream(this.output, this.encoder.signal);
+      return new Response(body, { headers: { "Content-Type": this.mimeType } }) as ZipWriterCloseResult<T>;
+    }
     if (this.outputAs === "uint8array") return readStream(this.output, this.encoder.signal) as Promise<ZipWriterCloseResult<T>>;
     if (this.outputAs === "arraybuffer") {
       const bytes = await readStream(this.output, this.encoder.signal);
@@ -730,7 +742,7 @@ export async function* readZipStream(zipStream: ReadableStream<Uint8Array<ArrayB
 
   try {
     for (const entry of entries) {
-      options.signal?.throwIfAborted();
+      options.signal?.[throwIfAborted_]();
       yield new StreamEntry(entry, options.maxEntrySize);
     }
   } finally {
@@ -742,12 +754,12 @@ export async function* readZipStream(zipStream: ReadableStream<Uint8Array<ArrayB
 // whose entries can be read in any order and re-read until close().
 export const openZip = async (source: Blob | File | Uint8Array<ArrayBuffer> | ArrayBuffer, options: ZipReadOptions = {}): Promise<ZipRandomAccessReader> => {
   validateReadOptions(options);
-  options.signal?.throwIfAborted();
+  options.signal?.[throwIfAborted_]();
   const bytes = source instanceof Uint8Array_
     ? source
     : source instanceof ArrayBuffer
       ? new Uint8Array_(source)
-      : new Uint8Array_(await source.arrayBuffer());
+      : new Uint8Array_(await source[arrayBuffer_]());
   if (options.maxArchiveSize !== undefined && bytes.length > options.maxArchiveSize) {
     throw new RangeError(DEV ? `ZIP archive size ${bytes.length} exceeds maxArchiveSize ${options.maxArchiveSize}` : E_LIMIT);
   }
@@ -799,7 +811,7 @@ class ZipEncoderState {
   }
 
   async encodeEntry(input: ZipInputEntry): Promise<Uint8Array<ArrayBuffer>[]> {
-    this.options.signal.throwIfAborted();
+    this.options.signal[throwIfAborted_]();
     const pathInfo = this.reservePath(input);
     try {
       return this.commit(await prepareEntry(input, this.options, pathInfo));
@@ -810,7 +822,7 @@ class ZipEncoderState {
   }
 
   encodeEntrySync(input: ZipSyncInputEntry): Uint8Array<ArrayBuffer>[] {
-    this.options.signal.throwIfAborted();
+    this.options.signal[throwIfAborted_]();
     const pathInfo = this.reservePath(input);
     try {
       return this.commit(prepareEntrySync(input, this.options, pathInfo));
@@ -873,7 +885,7 @@ class ZipEncoderState {
   }
 
   close(): Uint8Array<ArrayBuffer>[] {
-    this.options.signal.throwIfAborted();
+    this.options.signal[throwIfAborted_]();
     // centralSize is tracked incrementally in commit() rather than re-summed
     // here, and the EOCD chunks are appended onto the existing central array
     // instead of spreading every central record into a fresh array. close() is
@@ -1219,7 +1231,7 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
   const end = centralOffset + centralSize;
 
   for (let index = 0; index < entries && cursor < end; index++) {
-    options.signal?.throwIfAborted();
+    options.signal?.[throwIfAborted_]();
     const entry = readCentralEntry(bytes, cursor, fnDecoder);
     // Two central entries pointing at one local header (a reused/overlapping
     // offset) let a strict reader and a recovering one see different trees.
@@ -1366,17 +1378,17 @@ const inflateEntry = async (entry: CentralEntry & { compressed: Uint8Array<Array
 };
 
 const inputToBytes = async (input: ZipInputEntry["data"], signal?: AbortSignal, onProgress?: (loaded: number, total?: number) => void): Promise<Uint8Array<ArrayBuffer>> => {
-  signal?.throwIfAborted();
+  signal?.[throwIfAborted_]();
   if (typeof input === "string") return textEncoder.encode(input);
   if (input instanceof Uint8Array_) return input;
   if (input instanceof ArrayBuffer) return new Uint8Array_(input);
-  if (typeof Blob !== "undefined" && input instanceof Blob) return new Uint8Array_(await input.arrayBuffer());
+  if (typeof Blob !== "undefined" && input instanceof Blob) return new Uint8Array_(await input[arrayBuffer_]());
   if (isReadableStream_(input)) return readStream(input, signal, onProgress);
   throw new TypeError(DEV ? "Unsupported ZIP entry data type" : E_TYPE);
 };
 
 const inputToBytesSync = (input: ZipSyncInputEntry["data"], signal?: AbortSignal): Uint8Array<ArrayBuffer> => {
-  signal?.throwIfAborted();
+  signal?.[throwIfAborted_]();
   if (typeof input === "string") return textEncoder.encode(input);
   if (input instanceof Uint8Array_) return input;
   if (input instanceof ArrayBuffer) return new Uint8Array_(input);
@@ -1934,7 +1946,10 @@ const inflateRaw = async (input: Uint8Array<ArrayBuffer>, size: number, maxBytes
     });
     // Only the construction of the transform can fail for a "feature unsupported"
     // reason; that is the single case that should be reported as NotSupported.
-    decompressor = stream.pipeThrough(new StreamCtor("deflate-raw")) as ReadableStream<Uint8Array<ArrayBuffer>>;
+    // Compat builds accept the internal second argument and enforce it inside the
+    // pure-JS inflater; native DecompressionStream ignores the extra argument.
+    const BoundedStreamCtor = StreamCtor as typeof DecompressionStream & { new(format: string, maxBytes?: number): DecompressionStream };
+    decompressor = stream.pipeThrough(new BoundedStreamCtor("deflate-raw", maxBytes)) as ReadableStream<Uint8Array<ArrayBuffer>>;
   } catch (error) {
     throw new DOMException(DEV ? `DecompressionStream does not support deflate-raw: ${error instanceof Error ? error.message : String(error)}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
   }
@@ -2117,7 +2132,7 @@ const readStream = async (stream: ReadableStream<Uint8Array<ArrayBuffer>>, signa
   let total = 0;
   try {
     for (;;) {
-      signal?.throwIfAborted();
+      signal?.[throwIfAborted_]();
       const { done, value } = await reader.read();
       if (done) break;
       chunks.push(value);

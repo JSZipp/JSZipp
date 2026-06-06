@@ -977,7 +977,7 @@
         // Each LIBRARIES entry belongs to a family keyed by its display name.
         // FAMILY_META gives each family an accent color and a short source label.
         const FAMILY_META = {
-            "JSZipp": { accent: "#0ea5e9", note: "local build" },
+            "JSZipp": { accent: "#0ea5e9", note: location.origin === "https://jszipp.github.io" ? "jsdelivr CDN" : "local build" },
             "JSZip":  { accent: "#f59e0b", note: "jsdelivr CDN" },
             "UZIP":   { accent: "#a78bfa", note: "jsdelivr CDN" },
             "fflate": { accent: "#34d399", note: "jsdelivr CDN" },

@@ -13,10 +13,15 @@ declare const __DEV__: boolean;
 // collapses to the native passthrough and the compat modules tree-shake out.
 declare const CR61FF58: boolean;
 declare const CR86FF68: boolean;
+// Build flag for UMD sub-entry pruning. Defaults to true in source/test runs so
+// `src/index.ts` behaves like the published root entry when no bundler injects
+// it.
+declare const __JSZIPP_NAMESPACE__: boolean;
 
 const DEV = typeof __DEV__ === "boolean" ? __DEV__ : true;
 const CR61FF58_ = typeof CR61FF58 === "boolean" ? CR61FF58 : false;
 const CR86FF68_ = typeof CR86FF68 === "boolean" ? CR86FF68 : false;
+const JSZIPP_NAMESPACE_ = typeof __JSZIPP_NAMESPACE__ === "boolean" ? __JSZIPP_NAMESPACE__ : true;
 
 const Uint16Array_ = Uint16Array;
 type Uint16Array_ = Uint16Array<ArrayBuffer>;
@@ -148,6 +153,69 @@ export interface ZipProgress {
   phase: "read" | "compress" | "write" | "parse";
 }
 
+/**
+ * Fully prepared ZIP entry data returned by an optional worker backend.
+ *
+ * This is intentionally a structural data contract: the main writer still owns
+ * ZIP ordering, duplicate-path checks, local headers, central directory records,
+ * and output shaping. Backends should only prepare one already-reserved entry.
+ */
+export interface ZipPreparedEntry {
+  /** Normalized path reserved by the writer for this entry. */
+  path: string;
+  /** Whether the normalized path is a directory entry. */
+  isDirectory: boolean;
+  /** Modification time used for DOS and optional timestamp extra fields. */
+  modifiedAt: Date;
+  /** Creation time used when NTFS timestamp extras are enabled. */
+  createdAt?: Date;
+  /** Last-access time used when NTFS timestamp extras are enabled. */
+  lastAccess?: Date;
+  /** Per-entry central-directory comment. */
+  comment: string;
+  /** Caller-supplied raw extra fields, before writer-generated extras. */
+  extraField: Uint8Array<ArrayBuffer>;
+  /** Uncompressed payload size in bytes. */
+  sourceSize: number;
+  /** Final stored or raw-DEFLATE payload bytes. */
+  compressed: Uint8Array<ArrayBuffer>;
+  /** ZIP compression method number: 0 for store, 8 for deflate. */
+  method: number;
+  /** CRC-32 of the uncompressed payload. */
+  crc32: number;
+  /** External file attributes written into the central directory. */
+  externalAttributes: number;
+}
+
+/**
+ * Encoder options after JSZipp has applied defaults, excluding the worker
+ * backend itself so backends cannot recursively invoke themselves.
+ */
+export type ZipEncoderRuntimeOptions = Required<Omit<ZipEncoderOptions, "worker">>;
+
+/**
+ * Optional async entry-preparation backend used by `ZipWriter.add()` and
+ * `ZipTransformStream`.
+ *
+ * Return a `ZipPreparedEntry` to let the backend supply compressed bytes, or
+ * return `undefined` to ask JSZipp to use the normal in-thread preparation path.
+ * Implementations should be reusable across writers unless their own
+ * documentation says otherwise; JSZipp does not terminate or dispose them.
+ */
+export interface ZipWorkerBackend {
+  /**
+   * Prepare one already-reserved entry.
+   *
+   * `pathInfo` is produced by JSZipp's normal path validation/reservation path.
+   * Throw to fail the write; return `undefined` for ordinary fallback.
+   */
+  prepare(
+    input: ZipInputEntry,
+    options: ZipEncoderRuntimeOptions,
+    pathInfo: { path: string; isDirectory: boolean }
+  ): Promise<ZipPreparedEntry | undefined>;
+}
+
 export interface ZipEncoderOptions {
   // Default DEFLATE compression level 0..9 for entries that don't set their own.
   // 0 stores without compressing. Defaults to 6.
@@ -170,6 +238,16 @@ export interface ZipEncoderOptions {
   signal?: AbortSignal;
   // Called with read/compress/write progress updates as entries are encoded.
   onProgress?: (progress: ZipProgress) => void;
+  /**
+   * Optional backend used to prepare/compress async entries off the main thread.
+   *
+   * Usually created with `createWorkerBackend()` from
+   * `web-jszipp/worker-plugin`. Only async `add()` / `ZipTransformStream`
+   * writes consult this backend; `writeSync()` remains fully synchronous and
+   * local. The caller owns backend lifetime and should terminate reusable
+   * worker backends when they are no longer needed.
+   */
+  worker?: ZipWorkerBackend;
   // When true, the writer materializes an explicit ZIP entry for every parent
   // directory implied by an entry's path (e.g. adding "a/b/c.txt" also emits the
   // "a/" and "a/b/" directory entries, in order, before the file). Defaults to
@@ -336,21 +414,6 @@ export interface ZipReadOptions {
   signal?: AbortSignal;
   // Called with read/parse progress updates.
   onProgress?: (progress: ZipProgress) => void;
-}
-
-interface PreparedEntry {
-  path: string;
-  isDirectory: boolean;
-  modifiedAt: Date;
-  createdAt?: Date;
-  lastAccess?: Date;
-  comment: string;
-  extraField: Uint8Array<ArrayBuffer>;
-  source: Uint8Array<ArrayBuffer>;
-  compressed: Uint8Array<ArrayBuffer>;
-  method: number;
-  crc32: number;
-  externalAttributes: number;
 }
 
 interface CentralEntry {
@@ -768,18 +831,30 @@ export const openZip = async (source: Blob | File | Uint8Array<ArrayBuffer> | Ar
 };
 
 // Default export aggregating the public API for UMD/`import JSZipp from ...`.
-const JSZipp = {
-  ZipTransformStream,
-  ZipWriter,
-  readZipStream,
-  openZip,
-  TimestampMode
-};
+// Reader/writer UMD sub-entries import selected named exports from this module;
+// their builds disable the full namespace so the object literal does not pin the
+// opposite half of the library in the bundle.
+const JSZipp = JSZIPP_NAMESPACE_
+  ? {
+    ZipTransformStream,
+    ZipWriter,
+    readZipStream,
+    openZip,
+    TimestampMode
+  }
+  : undefined as unknown as {
+    ZipTransformStream: typeof ZipTransformStream;
+    ZipWriter: typeof ZipWriter;
+    readZipStream: typeof readZipStream;
+    openZip: typeof openZip;
+    TimestampMode: typeof TimestampMode;
+  };
 
 export default JSZipp;
 
 class ZipEncoderState {
-  private readonly options: Required<ZipEncoderOptions>;
+  private readonly options: ZipEncoderRuntimeOptions;
+  private readonly worker?: ZipWorkerBackend;
   private readonly central: Uint8Array<ArrayBuffer>[] = [];
   private readonly paths = new Set<string>();
   private offset = 0;
@@ -787,22 +862,24 @@ class ZipEncoderState {
   private centralSize = 0;
 
   constructor(options: ZipEncoderOptions) {
-    const level = options.level ?? 6;
+    const { worker, ...encoderOptions } = options;
+    this.worker = worker;
+    const level = encoderOptions.level ?? 6;
     if (!isInteger(level) || level < 0 || level > 9) throw new RangeError(DEV ? "level must be an integer from 0 to 9" : E_LEVEL);
-    const timestamps = options.timestamps ?? (TimestampMode.Dos | TimestampMode.Unix);
+    const timestamps = encoderOptions.timestamps ?? (TimestampMode.Dos | TimestampMode.Unix);
     // timestamps is a bitmask of the three TimestampMode flags (Dos|Unix|Ntfs),
     // so any value outside 0..7 (or a non-integer) is a caller mistake that would
     // otherwise be silently masked by the per-flag bitwise tests below.
     if (!isInteger(timestamps) || timestamps < 0 || timestamps > 7) throw new RangeError(DEV ? "timestamps must be a bitmask of TimestampMode flags (0 to 7)" : E_MODE);
     this.options = {
       level,
-      zip64: options.zip64 ?? "auto",
-      comment: options.comment ?? "",
+      zip64: encoderOptions.zip64 ?? "auto",
+      comment: encoderOptions.comment ?? "",
       timestamps,
-      pathMode: options.pathMode ?? "unsafe",
-      signal: options.signal ?? new AbortController_().signal,
-      onProgress: options.onProgress ?? (() => undefined),
-      explicitDirectoryEntries: options.explicitDirectoryEntries ?? false
+      pathMode: encoderOptions.pathMode ?? "unsafe",
+      signal: encoderOptions.signal ?? new AbortController_().signal,
+      onProgress: encoderOptions.onProgress ?? (() => undefined),
+      explicitDirectoryEntries: encoderOptions.explicitDirectoryEntries ?? false
     };
   }
 
@@ -814,7 +891,8 @@ class ZipEncoderState {
     this.options.signal[throwIfAborted_]();
     const pathInfo = this.reservePath(input);
     try {
-      return this.commit(await prepareEntry(input, this.options, pathInfo));
+      const prepared = this.worker && await this.worker.prepare(input, this.options, pathInfo);
+      return this.commit(prepared || await prepareEntry(input, this.options, pathInfo));
     } catch (error) {
       this.paths.delete(pathInfo.path);
       throw error;
@@ -841,7 +919,7 @@ class ZipEncoderState {
     return pathInfo;
   }
 
-  private commit(prepared: PreparedEntry): Uint8Array<ArrayBuffer>[] {
+  private commit(prepared: ZipPreparedEntry): Uint8Array<ArrayBuffer>[] {
     const locals: Uint8Array<ArrayBuffer>[] = [];
     // With explicitDirectoryEntries on, emit a standalone entry for each parent
     // directory implied by this entry's path that has not been written yet,
@@ -860,7 +938,7 @@ class ZipEncoderState {
 
   // Appends one prepared entry's local + central records and advances the
   // running offset/count. Shared by the entry and any directories it implies.
-  private writePrepared(prepared: PreparedEntry): Uint8Array<ArrayBuffer> {
+  private writePrepared(prepared: ZipPreparedEntry): Uint8Array<ArrayBuffer> {
     const chunks = writeEntry(prepared, this.offset, this.options.zip64, this.options.timestamps);
     this.offset += chunks.local.length;
     this.central.push(chunks.central);
@@ -1017,14 +1095,14 @@ class BlobZipEntry extends ZipEntryReader implements ZipRandomAccessEntry {
 // Validates the per-entry compression level and resolves the final write path.
 // Shared by prepareEntry (async) and prepareEntrySync (sync) to avoid
 // duplicating the level check and path normalization in both call sites.
-const preparePath = (input: ZipInputEntry | ZipSyncInputEntry, options: Required<ZipEncoderOptions>): { path: string; isDirectory: boolean } => {
+const preparePath = (input: ZipInputEntry | ZipSyncInputEntry, options: ZipEncoderRuntimeOptions): { path: string; isDirectory: boolean } => {
   const level = input.level ?? options.level;
   if (!isInteger(level) || level < 0 || level > 9) throw new RangeError(DEV ? "entry level must be an integer from 0 to 9" : E_LEVEL);
   const path = applyWritePathMode(normalizePath(input.path, input.path.endsWith("/")), options.pathMode);
   return { path, isDirectory: path.endsWith("/") };
 };
 
-const prepareEntry = async (input: ZipInputEntry, options: Required<ZipEncoderOptions>, pathInfo = preparePath(input, options)): Promise<PreparedEntry> => {
+const prepareEntry = async (input: ZipInputEntry, options: ZipEncoderRuntimeOptions, pathInfo = preparePath(input, options)): Promise<ZipPreparedEntry> => {
   const { path, isDirectory } = pathInfo;
   const source = isDirectory ? emptyBytes : await inputToBytes(input.data, options.signal, (loaded, total) => {
     options.onProgress({ phase: "read", path, loaded, total });
@@ -1032,13 +1110,20 @@ const prepareEntry = async (input: ZipInputEntry, options: Required<ZipEncoderOp
   return buildPreparedEntry(input, options, path, isDirectory, source);
 };
 
-const prepareEntrySync = (input: ZipSyncInputEntry, options: Required<ZipEncoderOptions>, pathInfo = preparePath(input, options)): PreparedEntry => {
+const prepareEntrySync = (input: ZipSyncInputEntry, options: ZipEncoderRuntimeOptions, pathInfo = preparePath(input, options)): ZipPreparedEntry => {
   const { path, isDirectory } = pathInfo;
   const source = isDirectory ? emptyBytes : inputToBytesSync(input.data, options.signal);
   return buildPreparedEntry(input, options, path, isDirectory, source);
 };
 
-const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: Required<ZipEncoderOptions>, path: string, isDirectory: boolean, source: Uint8Array<ArrayBuffer>): PreparedEntry => {
+/** @internal */
+export const __privatePrepareEntryForWorker = async (
+  input: ZipInputEntry,
+  options: ZipEncoderRuntimeOptions,
+  pathInfo: { path: string; isDirectory: boolean }
+): Promise<ZipPreparedEntry> => prepareEntry(input, options, pathInfo);
+
+const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: ZipEncoderRuntimeOptions, path: string, isDirectory: boolean, source: Uint8Array<ArrayBuffer>): ZipPreparedEntry => {
   const meta = input.meta;
   const modifiedAt = meta?.modifiedAt ?? new Date();
   // When the NTFS timestamp extra is requested, createdAt and lastAccess default
@@ -1074,7 +1159,7 @@ const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: R
     lastAccess,
     comment: meta?.comment ?? "",
     extraField,
-    source,
+    sourceSize: source.length,
     compressed,
     method: compressed.length === 0 ? METHOD_STORE : method,
     crc32: crc32(source),
@@ -1087,14 +1172,14 @@ const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: R
 // timestamp/permission/external-attribute handling as an explicitly added
 // directory (`add({ path: "a/" })`): write-time mtime, default 0o755 mode when
 // Unix permissions are recorded, and the DOS directory bit.
-const synthesizeDirectory = (path: string, options: Required<ZipEncoderOptions>): PreparedEntry =>
+const synthesizeDirectory = (path: string, options: ZipEncoderRuntimeOptions): ZipPreparedEntry =>
   buildPreparedEntry({ path, data: emptyBytes }, options, path, true, emptyBytes);
 
-const writeEntry = (entry: PreparedEntry, localOffset: number, zip64: Zip64Mode, timestamps: TimestampMode): { local: Uint8Array<ArrayBuffer>; central: Uint8Array<ArrayBuffer> } => {
+const writeEntry = (entry: ZipPreparedEntry, localOffset: number, zip64: Zip64Mode, timestamps: TimestampMode): { local: Uint8Array<ArrayBuffer>; central: Uint8Array<ArrayBuffer> } => {
   const pathBytes = textEncoder.encode(entry.path);
   const commentBytes = textEncoder.encode(entry.comment);
   const time = dosDateTime(entry.modifiedAt);
-  const needsZip64 = zip64 === "force" || entry.source.length > ZIP64_LIMIT || entry.compressed.length > ZIP64_LIMIT || localOffset > ZIP64_LIMIT;
+  const needsZip64 = zip64 === "force" || entry.sourceSize > ZIP64_LIMIT || entry.compressed.length > ZIP64_LIMIT || localOffset > ZIP64_LIMIT;
   if (zip64 === "off" && needsZip64) throw new RangeError(DEV ? "ZIP64 is disabled and this archive exceeds standard ZIP limits" : E_ZIP64);
   // The local header has only compressed/uncompressed size slots; the central
   // header also has the local-offset slot. writeEntry() saturates exactly those
@@ -1109,8 +1194,8 @@ const writeEntry = (entry: PreparedEntry, localOffset: number, zip64: Zip64Mode,
     // them to modifiedAt whenever the NTFS flag is set.
     ntfsExtra = makeNtfsTimestampExtra(entry.modifiedAt, entry.createdAt!, entry.lastAccess!);
   }
-  const localExtra = concat([entry.extraField, needsZip64 ? makeZip64Extra([entry.source.length, entry.compressed.length]) : emptyBytes, unixExtra, ntfsExtra]);
-  const centralExtra = concat([entry.extraField, needsZip64 ? makeZip64Extra([entry.source.length, entry.compressed.length, localOffset]) : emptyBytes, unixExtra, ntfsExtra]);
+  const localExtra = concat([entry.extraField, needsZip64 ? makeZip64Extra([entry.sourceSize, entry.compressed.length]) : emptyBytes, unixExtra, ntfsExtra]);
+  const centralExtra = concat([entry.extraField, needsZip64 ? makeZip64Extra([entry.sourceSize, entry.compressed.length, localOffset]) : emptyBytes, unixExtra, ntfsExtra]);
 
   // These lengths are written with writeU16(), which silently truncates above
   // 65535 and would emit a corrupt header; reject instead.
@@ -1128,7 +1213,7 @@ const writeEntry = (entry: PreparedEntry, localOffset: number, zip64: Zip64Mode,
   writeU16(view, 12, time.date);
   writeU32(view, 14, entry.crc32);
   writeU32(view, 18, needsZip64 ? ZIP64_LIMIT : entry.compressed.length);
-  writeU32(view, 22, needsZip64 ? ZIP64_LIMIT : entry.source.length);
+  writeU32(view, 22, needsZip64 ? ZIP64_LIMIT : entry.sourceSize);
   writeU16(view, 26, pathBytes.length);
   writeU16(view, 28, localExtra.length);
   local.set(pathBytes, 30);
@@ -1150,7 +1235,7 @@ const writeEntry = (entry: PreparedEntry, localOffset: number, zip64: Zip64Mode,
   writeU16(centralView, 14, time.date);
   writeU32(centralView, 16, entry.crc32);
   writeU32(centralView, 20, needsZip64 ? ZIP64_LIMIT : entry.compressed.length);
-  writeU32(centralView, 24, needsZip64 ? ZIP64_LIMIT : entry.source.length);
+  writeU32(centralView, 24, needsZip64 ? ZIP64_LIMIT : entry.sourceSize);
   writeU16(centralView, 28, pathBytes.length);
   writeU16(centralView, 30, centralExtra.length);
   writeU16(centralView, 32, commentBytes.length);

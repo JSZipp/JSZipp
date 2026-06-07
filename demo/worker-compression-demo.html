@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Main-Thread Seismograph — Worker vs Sync ZIP Compression</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a08; --panel:#0c120e; --panel2:#0f1712; --grid:#16241c;
+    --ink:#cdf7df; --dim:#5f8270; --dimmer:#3c5849;
+    --phosphor:#3dff9a;  /* good / off-thread */
+    --amber:#ffb627;     /* caution */
+    --red:#ff4d5e;       /* freeze / blocked */
+    --cyan:#46d4ff;      /* worker */
+    --violet:#b982ff;    /* JSZipp worker */
+    --magenta:#ff7ad9;   /* JSZipp classic worker */
+    --hair:rgba(61,255,154,.14);
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --sans:'IBM Plex Sans',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(70,212,255,.06), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(61,255,154,.05), transparent 60%),
+      var(--bg);
+    color:var(--ink); font-family:var(--mono); line-height:1.5;
+    padding:28px 20px 80px; position:relative; min-height:100vh;
+  }
+  /* CRT scanline atmosphere */
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.18) 2px 3px);
+    mix-blend-mode:multiply; opacity:.5;
+  }
+  .wrap{max-width:1080px; margin:0 auto}
+  header{border-bottom:1px solid var(--hair); padding-bottom:18px; margin-bottom:22px}
+  .demo-nav{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+    padding-bottom:14px;
+    border-bottom:1px solid var(--hair);
+  }
+  .demo-brand,
+  .demo-link{
+    color:var(--cyan);
+    text-decoration:none;
+    font-size:13px;
+    letter-spacing:.06em;
+  }
+  .demo-brand{
+    color:var(--ink);
+    font-weight:600;
+    text-transform:uppercase;
+  }
+  .demo-links{
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  h1{
+    font-family:'Major Mono Display',var(--mono); font-weight:400;
+    font-size:clamp(22px,4.2vw,40px); letter-spacing:1px; margin:0 0 6px;
+    color:var(--phosphor); text-shadow:0 0 18px rgba(61,255,154,.35);
+  }
+  .tag{color:var(--dim); font-size:13px; max-width:70ch}
+  .tag b{color:var(--cyan); font-weight:600}
+  .tag .freeze{color:var(--red)}
+  a{color:var(--cyan)}
+
+  .panel{
+    background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--hair); border-radius:10px; padding:16px 18px; margin:14px 0;
+    box-shadow:inset 0 1px 0 rgba(61,255,154,.05), 0 8px 30px rgba(0,0,0,.4);
+  }
+  .panel h2{
+    font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim);
+    margin:0 0 12px; font-weight:600; display:flex; align-items:center; gap:8px;
+  }
+  .panel h2::before{content:"▸"; color:var(--phosphor)}
+
+  /* ---- Seismograph ---- */
+  .scope-head{display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px}
+  .nowrun{font-size:13px; color:var(--dim)}
+  .nowrun b{color:var(--amber)}
+  canvas{width:100%; height:200px; display:block; border:1px solid var(--grid);
+    border-radius:6px; background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0/100% 25% ,
+      var(--bg);}
+  .readouts{display:flex; gap:22px; flex-wrap:wrap; margin-top:12px; font-size:13px}
+  .readouts div{color:var(--dim)}
+  .readouts b{color:var(--ink); font-variant-numeric:tabular-nums}
+  .ro-worst b{color:var(--red)}
+  .ro-fps b{color:var(--phosphor)}
+
+  /* ---- Controls ---- */
+  .controls{display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end}
+  .ctl label{display:block; font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--dim); margin-bottom:7px}
+  .seg{display:flex; border:1px solid var(--grid); border-radius:7px; overflow:hidden}
+  .seg button{
+    background:transparent; color:var(--dim); border:0; padding:8px 14px;
+    font-family:var(--mono); font-size:13px; cursor:pointer; border-right:1px solid var(--grid);
+  }
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:rgba(61,255,154,.12); color:var(--phosphor)}
+  .seg button:hover{color:var(--ink)}
+
+  .btn{
+    font-family:var(--mono); font-size:14px; font-weight:600; cursor:pointer;
+    padding:10px 18px; border-radius:8px; border:1px solid var(--phosphor);
+    background:rgba(61,255,154,.1); color:var(--phosphor); letter-spacing:.04em;
+    transition:.15s;
+  }
+  .btn:hover{background:rgba(61,255,154,.2); box-shadow:0 0 20px rgba(61,255,154,.25)}
+  .btn:disabled{opacity:.4; cursor:not-allowed; box-shadow:none}
+  .btn.ghost{border-color:var(--grid); background:transparent; color:var(--dim)}
+  .btn.ghost:hover{color:var(--ink); background:rgba(255,255,255,.03); box-shadow:none}
+
+  /* ---- Feel-it interactive ---- */
+  .feel{display:flex; gap:18px; flex-wrap:wrap; align-items:center; font-size:13px}
+  .feel .hint{color:var(--amber); flex-basis:100%; margin-bottom:2px}
+  .tapbtn{font-family:var(--mono); padding:9px 16px; border-radius:8px; cursor:pointer;
+    border:1px solid var(--cyan); background:rgba(70,212,255,.08); color:var(--cyan); font-size:14px}
+  .tapbtn:active{transform:scale(.96)}
+  .feel input[type=range]{accent-color:var(--phosphor)}
+  .feel input[type=text]{background:var(--bg); border:1px solid var(--grid); color:var(--ink);
+    font-family:var(--mono); padding:8px 10px; border-radius:6px; width:170px}
+  .spinner{width:26px; height:26px; border:3px solid var(--grid); border-top-color:var(--phosphor);
+    border-radius:50%; /* JS-driven rotation so it FREEZES with the main thread */}
+
+  /* ---- Results table ---- */
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th,td{text-align:right; padding:9px 10px; border-bottom:1px solid var(--grid); font-variant-numeric:tabular-nums}
+  th{color:var(--dim); font-weight:600; font-size:11px; letter-spacing:.1em; text-transform:uppercase}
+  td.name,th.name{text-align:left}
+  .dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; vertical-align:middle}
+  .swatch-jszipp{background:var(--red)}
+  .swatch-jzwm{background:var(--violet)}
+  .swatch-jzwc{background:var(--magenta)}
+  .swatch-ffs{background:var(--amber)}
+  .swatch-ffw{background:var(--cyan)}
+  .swatch-native{background:var(--phosphor)}
+  .verdict{font-size:11px; padding:2px 8px; border-radius:20px; letter-spacing:.05em}
+  .v-block{color:var(--red); background:rgba(255,77,94,.12); border:1px solid rgba(255,77,94,.3)}
+  .v-smooth{color:var(--phosphor); background:rgba(61,255,154,.1); border:1px solid rgba(61,255,154,.3)}
+  .v-pending{color:var(--dim)}
+  td.note{font-size:11px; color:var(--dimmer); text-align:left}
+
+  /* ---- Stall bar chart ---- */
+  .bars{display:flex; flex-direction:column; gap:14px; margin-top:6px}
+  .barrow{display:grid; grid-template-columns:160px 1fr 90px; align-items:center; gap:12px; font-size:13px}
+  .barrow .lbl{color:var(--dim)}
+  .track{height:22px; background:var(--bg); border:1px solid var(--grid); border-radius:5px; overflow:hidden; position:relative}
+  .fill{height:100%; width:0; transition:width .6s cubic-bezier(.2,.8,.2,1); border-radius:4px 0 0 4px}
+  .fill.jszipp{background:linear-gradient(90deg,#8a1f2c,var(--red))}
+  .fill.jzwm{background:linear-gradient(90deg,#5d348d,var(--violet))}
+  .fill.jzwc{background:linear-gradient(90deg,#8b2c72,var(--magenta))}
+  .fill.ffs{background:linear-gradient(90deg,#7a5410,var(--amber))}
+  .fill.ffw{background:linear-gradient(90deg,#15596e,var(--cyan))}
+  .fill.native{background:linear-gradient(90deg,#1c6a45,var(--phosphor))}
+  .barval{color:var(--ink); text-align:right; font-variant-numeric:tabular-nums}
+  .chart-axis{font-size:10px; color:var(--dimmer); margin-top:4px}
+
+  .status{font-size:12px; color:var(--dim); margin-top:10px; min-height:1.4em}
+  .status .err{color:var(--red)}
+  .status .ok{color:var(--phosphor)}
+
+  details{margin-top:18px; border:1px solid var(--hair); border-radius:10px; padding:0 16px}
+  summary{cursor:pointer; padding:14px 0; color:var(--cyan); font-size:13px; letter-spacing:.06em}
+  details[open] summary{border-bottom:1px solid var(--grid); margin-bottom:12px}
+  .fine{font-family:var(--sans); font-size:13.5px; color:var(--dim); line-height:1.65}
+  .fine b{color:var(--ink)}
+  .fine code{font-family:var(--mono); color:var(--amber); font-size:.92em}
+  .fine ul{padding-left:18px}
+  .fine li{margin:6px 0}
+  footer{margin-top:30px; font-size:11px; color:var(--dimmer); text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="demo-nav" aria-label="Demo navigation">
+    <a class="demo-brand" href="./index.html">JSZipp demos</a>
+    <div class="demo-links">
+      <a class="demo-link" href="./index.html">Main lab</a>
+      <a class="demo-link" href="./compress.html">Compressor</a>
+      <a class="demo-link" href="./library-benchmark.html">Benchmark</a>
+    </div>
+  </nav>
+  <header>
+    <h1>main-thread seismograph</h1>
+    <p class="tag">
+      ZIP compression that runs on the main thread <span class="freeze">freezes everything</span> —
+      animation, scrolling, clicks, typing. A <b>Web Worker</b> moves the work off-thread so the page stays alive.
+      This instrument plots <b>per-frame time</b> live: a flat line is a responsive UI; a tall spike is the UI hung.
+      Run the tests and watch which compressors spike.
+    </p>
+  </header>
+
+  <!-- SEISMOGRAPH -->
+  <div class="panel">
+    <div class="scope-head">
+      <h2>frame-time monitor</h2>
+      <div class="nowrun">status: <b id="nowRunning">idle</b></div>
+    </div>
+    <canvas id="scope" width="1000" height="200"></canvas>
+    <div class="readouts">
+      <div class="ro-fps">live fps&nbsp; <b id="fps">—</b></div>
+      <div>this frame&nbsp; <b id="frameMs">—</b> ms</div>
+      <div class="ro-worst">worst stall this session&nbsp; <b id="worst">0</b> ms</div>
+      <div style="color:var(--dimmer)">baseline 16.7ms = 60fps · spikes scaled √</div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="panel">
+    <h2>workload</h2>
+    <div class="controls">
+      <div class="ctl">
+        <label>payload size (one entry)</label>
+        <div class="seg" id="sizeSeg">
+          <button data-mb="5">5 MB</button>
+          <button data-mb="15" aria-pressed="true">15 MB</button>
+          <button data-mb="30">30 MB</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>deflate level</label>
+        <div class="seg" id="lvlSeg">
+          <button data-lvl="1">1</button>
+          <button data-lvl="6" aria-pressed="true">6</button>
+          <button data-lvl="9">9</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <button class="btn" id="runAll">▶ run full sequence</button>
+      </div>
+      <div class="ctl">
+        <button class="btn ghost" id="reset">reset</button>
+      </div>
+    </div>
+    <div class="status" id="status">Loading libraries from CDN…</div>
+  </div>
+
+  <!-- FEEL IT -->
+  <div class="panel">
+    <h2>feel the freeze (interact during a run)</h2>
+    <div class="feel">
+      <span class="hint">Start a run, then try these. During main-thread tests they go dead; during worker/native they stay buttery.</span>
+      <div class="spinner" id="spinner"></div>
+      <button class="tapbtn" id="tapbtn">taps: 0</button>
+      <input type="range" min="0" max="100" value="50" aria-label="drag me" />
+      <input type="text" placeholder="type here…" />
+    </div>
+  </div>
+
+  <!-- RESULTS TABLE -->
+  <div class="panel">
+    <h2>results</h2>
+    <table>
+      <thead>
+        <tr>
+          <th class="name">compressor</th>
+          <th>codec time</th>
+          <th>longest main-thread stall</th>
+          <th>janky frames<br>(&gt;50ms)</th>
+          <th>output</th>
+          <th class="name">verdict</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <!-- STALL CHART -->
+  <div class="panel">
+    <h2>longest main-thread stall — the punchline</h2>
+    <div class="bars" id="bars"></div>
+    <div class="chart-axis">lower is better · bar length = milliseconds the UI was frozen during that test</div>
+  </div>
+
+  <details>
+    <summary>How to read this honestly — caveats &amp; methodology</summary>
+    <div class="fine">
+      <ul>
+        <li><b>This measures responsiveness, not codec speed.</b> fflate is a faster DEFLATE engine than
+          JSZipp's in-repo JS deflate, so its <i>codec time</i> column will usually be lower too. The point of the
+          demo is the <b>stall</b> column: how long the main thread was blocked and unable to render or respond.</li>
+        <li><b>JSZipp appears three times.</b> The main-thread row is the default <code>web-jszipp</code> writer. The
+          worker rows load <code>web-jszipp/worker-plugin</code>, pass a worker backend to the normal
+          <code>ZipWriter</code>, and compare static module-worker and classic-worker scripts.</li>
+        <li><b>fflate sync</b> (<code>zipSync</code>) also runs on the main thread — included to show that "sync on main
+          thread" is the property that freezes the UI, regardless of library. <b>fflate worker</b> (<code>zip(...)</code>,
+          async) ships its own inline Web Worker and transfers the buffer off-thread.</li>
+        <li><b>Native <code>CompressionStream('deflate-raw')</code></b> is a bonus row: it runs the codec in native
+          browser code off the main thread with <i>zero added bundle</i>. It emits a raw DEFLATE stream, <i>not a full
+          ZIP container</i>, so its output size isn't directly comparable — it's here to show the cheapest off-thread path.</li>
+        <li><b>The jank indicators are JS-driven on purpose.</b> The spinner and tap counter update via
+          <code>requestAnimationFrame</code>, so they freeze with the main thread. (A pure-CSS spinner can keep turning on
+          the compositor even while JS is hung, which would hide the problem.)</li>
+        <li><b>Stall is measured</b> as the largest gap between consecutive animation frames during each test: when JS
+          blocks, rAF stops firing, and the gap ≈ the freeze duration.</li>
+        <li><b>Warm-up matters.</b> The first run of a library includes JIT warm-up; re-run for steadier numbers.
+          Output sizes differ slightly between deflate implementations and levels — that's expected.</li>
+      </ul>
+      <p style="color:var(--dimmer)">
+        Testing your local JSZipp build instead of the published one? Replace the <code>web-jszipp</code> CDN URL in the
+        source with <code>../dist/jszipp.umd.js</code>, <code>../dist/jszipp.worker-plugin.mjs</code>, and
+        <code>../dist/jszipp.worker.mjs</code>. For compat builds use the matching
+        <code>../dist/cr61ff58/</code> or <code>../dist/cr86ff68/</code> UMD plugin and classic worker script. Serve the
+        repo over HTTP (e.g. <code>node scripts/serve-demo.mjs</code>), since module/UMD/worker loading needs a real origin.
+      </p>
+    </div>
+  </details>
+
+  <footer>main-thread seismograph · a worker-compression demo · loads fflate + web-jszipp from local dist/jsDelivr/unpkg</footer>
+</div>
+
+<script>
+/* =========================================================================
+   CDN loading (with fallback). Globals: window.fflate, window.JSZipp
+   ========================================================================= */
+
+const SOURCES = {
+  fflate: [
+    "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
+    "https://unpkg.com/fflate@0.8.2/umd/index.js"
+  ],
+  jszipp: [
+    "../dist/jszipp.umd.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp@1.0.6/dist/jszipp.umd.js",
+    "https://unpkg.com/web-jszipp@1.0.6/dist/jszipp.umd.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
+    "https://unpkg.com/web-jszipp/dist/jszipp.umd.js"
+  ],
+  jszippWorkerPluginModule: [
+    "../dist/jszipp.worker-plugin.mjs",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.mjs",
+    "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.mjs"
+  ],
+  jszippWorkerPluginClassic: [
+    "../dist/jszipp.worker-plugin.umd.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.umd.js",
+    "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.umd.js",
+    "../dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    "../dist/cr61ff58/jszipp.worker-plugin.umd.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js",
+    "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js"
+  ],
+  jszippWorkerScriptModule: [
+    "../dist/jszipp.worker.mjs",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.mjs",
+    "https://unpkg.com/web-jszipp/dist/jszipp.worker.mjs"
+  ],
+  jszippWorkerScriptClassic: [
+    "../dist/jszipp.worker.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.js",
+    "https://unpkg.com/web-jszipp/dist/jszipp.worker.js",
+    "../dist/cr86ff68/jszipp.worker.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker.js",
+    "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker.js",
+    "../dist/cr61ff58/jszipp.worker.js",
+    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker.js",
+    "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker.js"
+  ]
+};
+let JSZippWorkerPlugin = null;
+let JSZippModuleWorkerScriptUrl = null;
+let JSZippClassicWorkerScriptUrl = null;
+
+function loadScript(urls){
+  return new Promise((resolve)=>{
+    let i = 0;
+    const tryNext = ()=>{
+      if(i >= urls.length){ resolve(false); return; }
+      const s = document.createElement("script");
+      s.src = urls[i++];
+      s.onload = ()=>resolve(true);
+      s.onerror = ()=>{ s.remove(); tryNext(); };
+      document.head.appendChild(s);
+    };
+    tryNext();
+  });
+}
+
+async function loadModule(urls){
+  for(const url of urls){
+    try { return { module: await import(url), url }; }
+    catch {}
+  }
+  return { module: null, url: null };
+}
+
+async function loadWorkerPlugin(){
+  const mod = await loadModule(SOURCES.jszippWorkerPluginModule);
+  if(mod.module) return mod;
+  if(await loadScript(SOURCES.jszippWorkerPluginClassic) && window.JSZippWorkerPlugin){
+    return { module: window.JSZippWorkerPlugin, url:"classic" };
+  }
+  return { module:null, url:null };
+}
+
+async function resolveWorkerScript(urls){
+  for(const url of urls){
+    try {
+      const res = await fetch(url, { method:"HEAD", cache:"no-store" });
+      if(res.ok) return url;
+    } catch {}
+  }
+  return null;
+}
+
+async function resolveJSZippWorkerScripts(){
+  const [moduleUrl, classicUrl] = await Promise.all([
+    resolveWorkerScript(SOURCES.jszippWorkerScriptModule),
+    resolveWorkerScript(SOURCES.jszippWorkerScriptClassic)
+  ]);
+  return { moduleUrl, classicUrl };
+}
+
+function makeJSZippModuleWorker(){
+  if(!JSZippModuleWorkerScriptUrl) throw new Error("JSZipp module worker script unavailable");
+  return new Worker(JSZippModuleWorkerScriptUrl, { type:"module" });
+}
+
+function makeJSZippClassicWorker(){
+  if(!JSZippClassicWorkerScriptUrl) throw new Error("JSZipp classic worker script unavailable");
+  return new Worker(JSZippClassicWorkerScriptUrl);
+}
+
+/* =========================================================================
+   Frame-time monitor + seismograph canvas
+   ========================================================================= */
+const Monitor = (()=>{
+  const cvs = document.getElementById("scope");
+  const ctx = cvs.getContext("2d");
+  const fpsEl = document.getElementById("fps");
+  const frameMsEl = document.getElementById("frameMs");
+  const worstEl = document.getElementById("worst");
+
+  const N = 320;                 // samples shown
+  const samples = new Float32Array(N);
+  let head = 0;
+  let last = performance.now();
+  let worst = 0;
+  let fpsAccum = 0, fpsCount = 0, fpsLast = last;
+
+  // per-window capture for a single test
+  let win = null; // {max, jank, frames}
+
+  const MAXMS = 1600;            // top of the √ scale
+  function scaleY(ms){ return Math.min(1, Math.sqrt(Math.max(0,ms)/MAXMS)); }
+
+  function resize(){
+    const dpr = Math.min(2, window.devicePixelRatio||1);
+    const w = cvs.clientWidth, h = cvs.clientHeight;
+    cvs.width = w*dpr; cvs.height = h*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener("resize", resize);
+
+  function color(ms){
+    if(ms < 33) return "#3dff9a";
+    if(ms < 100) return "#ffb627";
+    return "#ff4d5e";
+  }
+
+  function draw(){
+    const w = cvs.clientWidth, h = cvs.clientHeight;
+    ctx.clearRect(0,0,w,h);
+    // guide lines: 16.7ms and 50ms
+    ctx.strokeStyle = "rgba(61,255,154,.18)"; ctx.lineWidth=1;
+    [16.7,50,200].forEach(ms=>{
+      const y = h - scaleY(ms)*h;
+      ctx.beginPath(); ctx.setLineDash([3,5]); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle="rgba(95,130,112,.7)"; ctx.font="10px 'IBM Plex Mono'";
+      ctx.fillText(ms+"ms", 4, y-3);
+    });
+    // waveform as filled bars
+    const bw = w / N;
+    for(let i=0;i<N;i++){
+      const idx = (head + i) % N;
+      const ms = samples[idx];
+      if(ms<=0) continue;
+      const bh = scaleY(ms)*h;
+      ctx.fillStyle = color(ms);
+      const x = i*bw;
+      ctx.globalAlpha = ms<33 ? .55 : .92;
+      ctx.fillRect(x, h-bh, Math.max(1,bw-0.4), bh);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function tick(now){
+    const dt = now - last; last = now;
+    samples[head] = dt; head = (head+1)%N;
+    if(dt > worst){ worst = dt; worstEl.textContent = Math.round(worst); }
+    // fps over ~500ms
+    fpsAccum += dt; fpsCount++;
+    if(now - fpsLast > 500){
+      const fps = 1000 / (fpsAccum/fpsCount);
+      fpsEl.textContent = fps.toFixed(0);
+      frameMsEl.textContent = (fpsAccum/fpsCount).toFixed(1);
+      fpsAccum=0; fpsCount=0; fpsLast=now;
+    }
+    if(win){
+      win.frames++;
+      if(dt > win.max) win.max = dt;
+      if(dt > 50) win.jank++;
+    }
+    spinnerTick(now);
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  // JS-driven spinner so it freezes when the main thread blocks
+  const spinner = document.getElementById("spinner");
+  function spinnerTick(now){
+    spinner.style.transform = "rotate("+((now/3)%360)+"deg)";
+  }
+
+  function beginWindow(){ win = {max:0, jank:0, frames:0}; }
+  function endWindow(){ const r = win; win = null; return r || {max:0,jank:0,frames:0}; }
+  function resetWorst(){ worst = 0; worstEl.textContent = 0; }
+
+  resize();
+  requestAnimationFrame(tick);
+  return { beginWindow, endWindow, resetWorst };
+})();
+
+const nextFrame = ()=> new Promise(r=>requestAnimationFrame(()=>r()));
+const sleep = (ms)=> new Promise(r=>setTimeout(r,ms));
+
+/* =========================================================================
+   Payload generation (semi-compressible, cached per size)
+   ========================================================================= */
+const payloadCache = new Map();
+function makePayload(mb){
+  if(payloadCache.has(mb)) return payloadCache.get(mb);
+  const target = mb*1024*1024;
+  const enc = new TextEncoder();
+  // ~64KB base block of pseudo-text + JSON so DEFLATE does real match-finding
+  const lex = "the quick brown fox jumps over the lazy dog function const return value length "
+    + 'buffer stream compress archive header entry offset window token match table '
+    + '{"id":12345,"name":"jszipp","ok":true,"tags":["zip","deflate","worker"],"size":0} ';
+  let base = "";
+  while(base.length < 65536) base += lex + Math.random().toString(36).slice(2) + " ";
+  const baseBytes = enc.encode(base);
+  const out = new Uint8Array(target);
+  let off = 0, seed = 987654321>>>0;
+  const rnd = ()=>{ seed = (seed*1664525 + 1013904223)>>>0; return seed; };
+  while(off < target){
+    const n = Math.min(baseBytes.length, target-off);
+    out.set(baseBytes.subarray(0,n), off);
+    for(let k=0;k<n;k+=997) out[off+k] = rnd() & 0xff; // perturb to defeat trivial dedup
+    off += n;
+  }
+  payloadCache.set(mb, out);
+  return out;
+}
+
+/* =========================================================================
+   Contenders
+   ========================================================================= */
+const FILE = "payload.bin";
+
+function jszippAvailable(){ return !!(window.JSZipp && window.JSZipp.ZipWriter); }
+function jszippWorkerPluginAvailable(){
+  return !!(JSZippWorkerPlugin && JSZippWorkerPlugin.createWorkerBackend && window.JSZipp && typeof Worker !== "undefined");
+}
+function jszippModuleWorkerAvailable(){
+  return !!(jszippWorkerPluginAvailable() && JSZippModuleWorkerScriptUrl);
+}
+function jszippClassicWorkerAvailable(){
+  return !!(jszippWorkerPluginAvailable() && JSZippClassicWorkerScriptUrl);
+}
+
+const CONTENDERS = [
+  {
+    id:"jszipp", swatch:"swatch-jszipp", fill:"jszipp",
+    name:"JSZipp (main thread)",
+    note:"current behavior — sync JS deflate",
+    available: jszippAvailable,
+    async run(data, level){
+      const writer = new window.JSZipp.ZipWriter({ level, outputAs:"uint8array" });
+      await writer.add({ path:FILE, data });           // deflate runs synchronously here
+      return await writer.close();
+    }
+  },
+  {
+    id:"jzwm", swatch:"swatch-jzwm", fill:"jzwm",
+    name:"JSZipp module worker",
+    note:"static module worker script",
+    available: jszippModuleWorkerAvailable,
+    async run(data, level){
+      const worker = JSZippWorkerPlugin.createWorkerBackend({
+        fallback:false,
+        transfer:"transfer",
+        workerSource:makeJSZippModuleWorker
+      });
+      try {
+        const writer = new window.JSZipp.ZipWriter({ level, outputAs:"uint8array", worker });
+        await writer.add({ path:FILE, data });
+        return await writer.close();
+      } finally {
+        worker.terminate();
+      }
+    }
+  },
+  {
+    id:"jzwc", swatch:"swatch-jzwc", fill:"jzwc",
+    name:"JSZipp classic worker",
+    note:"static UMD/classic worker script",
+    available: jszippClassicWorkerAvailable,
+    async run(data, level){
+      const worker = JSZippWorkerPlugin.createWorkerBackend({
+        fallback:false,
+        transfer:"transfer",
+        workerSource:makeJSZippClassicWorker
+      });
+      try {
+        const writer = new window.JSZipp.ZipWriter({ level, outputAs:"uint8array", worker });
+        await writer.add({ path:FILE, data });
+        return await writer.close();
+      } finally {
+        worker.terminate();
+      }
+    }
+  },
+  {
+    id:"ffs", swatch:"swatch-ffs", fill:"ffs",
+    name:"fflate sync (main thread)",
+    note:"zipSync — blocks the thread",
+    available: ()=>!!(window.fflate && window.fflate.zipSync),
+    async run(data, level){
+      return window.fflate.zipSync({ [FILE]:[data,{level}] }, {});
+    }
+  },
+  {
+    id:"ffw", swatch:"swatch-ffw", fill:"ffw",
+    name:"fflate worker (off thread)",
+    note:"zip() async — inline Web Worker",
+    available: ()=>!!(window.fflate && window.fflate.zip),
+    run(data, level){
+      return new Promise((resolve,reject)=>{
+        window.fflate.zip({ [FILE]:[data,{level}] }, {}, (err,out)=> err?reject(err):resolve(out));
+      });
+    }
+  },
+  {
+    id:"native", swatch:"swatch-native", fill:"native",
+    name:"native CompressionStream",
+    note:"deflate-raw, off-thread, zero bundle (not a full ZIP)",
+    available: ()=> typeof CompressionStream !== "undefined",
+    async run(data){
+      const cs = new CompressionStream("deflate-raw");
+      const stream = new Blob([data]).stream().pipeThrough(cs);
+      const buf = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buf);
+    }
+  }
+];
+
+/* =========================================================================
+   UI state + rendering
+   ========================================================================= */
+let MB = 15, LEVEL = 6, busy = false;
+const rowsEl = document.getElementById("rows");
+const barsEl = document.getElementById("bars");
+const statusEl = document.getElementById("status");
+const nowEl = document.getElementById("nowRunning");
+const runAllBtn = document.getElementById("runAll");
+const resetBtn = document.getElementById("reset");
+const results = {}; // id -> {time, stall, jank, size, ratio}
+
+function fmtBytes(n){
+  if(n<1024) return n+" B";
+  if(n<1024*1024) return (n/1024).toFixed(1)+" KB";
+  return (n/1024/1024).toFixed(2)+" MB";
+}
+
+function buildRows(){
+  rowsEl.innerHTML = "";
+  barsEl.innerHTML = "";
+  for(const c of CONTENDERS){
+    const avail = c.available();
+    const tr = document.createElement("tr");
+    tr.id = "row-"+c.id;
+    tr.innerHTML = `
+      <td class="name"><span class="dot ${c.swatch}"></span>${c.name}</td>
+      <td data-k="time">—</td>
+      <td data-k="stall">—</td>
+      <td data-k="jank">—</td>
+      <td data-k="size">—</td>
+      <td class="name"><span class="verdict v-pending" data-k="verdict">${avail?"ready":"unavailable"}</span></td>`;
+    if(!avail) tr.style.opacity=".4";
+    rowsEl.appendChild(tr);
+
+    const br = document.createElement("div");
+    br.className="barrow"; br.id="bar-"+c.id;
+    br.innerHTML = `<span class="lbl">${c.name}</span>
+      <div class="track"><div class="fill ${c.fill}" data-k="fill"></div></div>
+      <span class="barval" data-k="val">—</span>`;
+    barsEl.appendChild(br);
+  }
+  // add a note row under table for native
+  const noteTr = document.createElement("tr");
+  noteTr.innerHTML = `<td class="note" colspan="6">▸ codec time = wall clock of the compress call · stall = longest UI freeze during it</td>`;
+  rowsEl.appendChild(noteTr);
+}
+
+function renderResult(c){
+  const r = results[c.id];
+  const tr = document.getElementById("row-"+c.id);
+  const set = (k,v)=> tr.querySelector(`[data-k="${k}"]`).textContent = v;
+  set("time", r.time.toFixed(0)+" ms");
+  set("stall", r.stall.toFixed(0)+" ms");
+  set("jank", r.jank);
+  set("size", fmtBytes(r.size) + (r.ratio?` · ${r.ratio.toFixed(2)}×`:""));
+  const v = tr.querySelector('[data-k="verdict"]');
+  const blocked = r.stall > 80;
+  v.className = "verdict " + (blocked?"v-block":"v-smooth");
+  v.textContent = blocked ? "UI FROZEN" : "stayed smooth";
+
+  // bars scaled to the max stall across all results so far
+  const maxStall = Math.max(50, ...Object.values(results).map(x=>x.stall));
+  for(const cc of CONTENDERS){
+    const rr = results[cc.id]; if(!rr) continue;
+    const bar = document.getElementById("bar-"+cc.id);
+    bar.querySelector('[data-k="fill"]').style.width = (rr.stall/maxStall*100).toFixed(1)+"%";
+    bar.querySelector('[data-k="val"]').textContent = rr.stall.toFixed(0)+" ms";
+  }
+}
+
+async function runOne(c){
+  if(!c.available()) return;
+  let data = makePayload(MB);
+  data = data.slice();
+  const inputSize = data.length;
+  nowEl.innerHTML = `compressing ${MB}MB @ L${LEVEL} with <b>${c.name}</b> …`;
+  await nextFrame(); await nextFrame();        // let UI settle before measuring
+  Monitor.beginWindow();
+  const t0 = performance.now();
+  let out, err=null;
+  try { out = await c.run(data, LEVEL); }
+  catch(e){ err = e; }
+  const t1 = performance.now();
+  await nextFrame(); await nextFrame();         // capture the post-block frame gap
+  const win = Monitor.endWindow();
+  if(err){
+    statusEl.innerHTML = `<span class="err">${c.name} failed: ${err.message||err}</span>`;
+    nowEl.textContent = "idle";
+    return;
+  }
+  results[c.id] = {
+    time: t1-t0,
+    stall: win.max,
+    jank: win.jank,
+    size: out.length,
+    ratio: inputSize / out.length
+  };
+  renderResult(c);
+  nowEl.textContent = "idle";
+}
+
+async function runSequence(){
+  if(busy) return;
+  busy = true; runAllBtn.disabled = true; resetBtn.disabled = true;
+  statusEl.innerHTML = `<span class="ok">Running sequence — watch the seismograph &amp; try the buttons below.</span>`;
+  for(const c of CONTENDERS){
+    if(!c.available()) continue;
+    await runOne(c);
+    await sleep(700);                            // settle gap so spikes are attributable
+  }
+  statusEl.innerHTML = `<span class="ok">Done. Red bars = the UI was frozen that many ms. Cyan/green stayed responsive.</span>`;
+  busy = false; runAllBtn.disabled = false; resetBtn.disabled = false;
+}
+
+/* tap counter — JS driven so it dies during main-thread work */
+let taps = 0;
+const tapbtn = document.getElementById("tapbtn");
+tapbtn.addEventListener("click", ()=>{ taps++; tapbtn.textContent = "taps: "+taps; });
+
+/* segmented controls */
+function wireSeg(id, attr, cb){
+  document.getElementById(id).addEventListener("click", e=>{
+    const b = e.target.closest("button"); if(!b) return;
+    [...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed","false"));
+    b.setAttribute("aria-pressed","true");
+    cb(Number(b.dataset[attr]));
+  });
+}
+wireSeg("sizeSeg","mb", v=>{ MB=v; });
+wireSeg("lvlSeg","lvl", v=>{ LEVEL=v; });
+
+runAllBtn.addEventListener("click", runSequence);
+resetBtn.addEventListener("click", ()=>{
+  for(const k in results) delete results[k];
+  Monitor.resetWorst();
+  buildRows();
+  statusEl.innerHTML = "Reset. Pick a workload and run again.";
+});
+
+/* =========================================================================
+   Boot
+   ========================================================================= */
+(async ()=>{
+  buildRows();
+  const [okFF, okJZ, workerPlugin, workerScripts] = await Promise.all([
+    loadScript(SOURCES.fflate),
+    loadScript(SOURCES.jszipp),
+    loadWorkerPlugin(),
+    resolveJSZippWorkerScripts()
+  ]);
+  JSZippWorkerPlugin = workerPlugin.module;
+  JSZippModuleWorkerScriptUrl = workerScripts.moduleUrl;
+  JSZippClassicWorkerScriptUrl = workerScripts.classicUrl;
+  buildRows(); // re-render availability now that globals exist
+  const parts = [];
+  parts.push(okFF && window.fflate ? "fflate ✓" : "fflate ✗");
+  parts.push(okJZ && jszippAvailable() ? "web-jszipp ✓" : "web-jszipp ✗ (CDN blocked? see methodology)");
+  parts.push(JSZippWorkerPlugin ? "web-jszipp/worker-plugin ✓" : "web-jszipp/worker-plugin ✗");
+  parts.push(JSZippModuleWorkerScriptUrl ? "module worker ✓" : "module worker ✗");
+  parts.push(JSZippClassicWorkerScriptUrl ? "classic worker ✓" : "classic worker ✗");
+  parts.push(typeof CompressionStream!=="undefined" ? "CompressionStream ✓" : "CompressionStream ✗");
+  const allCore = (okFF&&window.fflate);
+  statusEl.innerHTML = `Libraries: ${parts.join(" · ")}. ` +
+    (allCore ? `<span class="ok">Ready — press “run full sequence”.</span>`
+             : `<span class="err">fflate did not load; check your network / CDN access.</span>`);
+})();
+</script>
+</body>
+</html>

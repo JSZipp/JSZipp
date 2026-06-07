@@ -1,4 +1,7 @@
-# ZIP Optional Metadata: What Adds Bytes and What Does Not
+# ZIP Metadata Overhead Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 This document separates ZIP metadata into two categories:
 

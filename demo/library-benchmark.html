@@ -38,6 +38,40 @@
             margin: 0 auto;
         }
 
+        .demo-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin: 8px 0 20px;
+        }
+
+        .demo-brand,
+        .demo-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.92rem;
+        }
+
+        .demo-brand {
+            color: var(--text-primary);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .demo-links {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .demo-link:hover,
+        .demo-link:focus-visible {
+            color: var(--primary);
+        }
+
         header {
             text-align: center;
             margin: 24px 0 32px;
@@ -759,6 +793,14 @@
 </head>
 <body>
     <div class="container">
+        <nav class="demo-nav" aria-label="Demo navigation">
+            <a class="demo-brand" href="./index.html">JSZipp demos</a>
+            <div class="demo-links">
+                <a class="demo-link" href="./index.html">Main lab</a>
+                <a class="demo-link" href="./compress.html">Compressor</a>
+                <a class="demo-link" href="./worker-compression-demo.html">Worker demo</a>
+            </div>
+        </nav>
         <header>
             <h1>ZIP Library Benchmark</h1>
             <p class="subtitle">Compression &amp; decompression timing &middot; grouped by library</p>

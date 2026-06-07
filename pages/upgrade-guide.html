@@ -5,13 +5,68 @@
     <header data-site-header></header>
     <div class="layout"><aside class="sidebar" data-site-sidebar></aside><main class="content">
       <section class="hero"><span class="eyebrow">Migration</span><h1>Upgrade guide</h1><p class="lede">JSZipp can replace JSZip in many browser workflows, but it is not an API-compatible drop-in.</p></section>
+      <div class="callout warn"><strong>Important:</strong> JSZipp is not a drop-in replacement for JSZip. JSZip gives you a mutable archive object; JSZipp gives you append-style writers and readers.</div>
       <h2>Quick comparison</h2>
-      <table><thead><tr><th>Task</th><th>JSZip</th><th>JSZipp</th></tr></thead><tbody>
-        <tr><td>Create ZIP</td><td><code>zip.file()</code>, <code>generateAsync()</code></td><td><code>writer.add()</code>, <code>writer.close()</code></td></tr>
-        <tr><td>Read ZIP</td><td><code>JSZip.loadAsync()</code></td><td><code>openZip(source)</code></td></tr>
-        <tr><td>Modify existing archive</td><td>Mutate loaded object</td><td>Open old archive and write a new archive</td></tr>
-        <tr><td>Output</td><td>Browser and Node-oriented options</td><td>Web-native <code>Blob</code>, <code>Response</code>, stream, bytes</td></tr>
+      <table><thead><tr><th>Feature</th><th>JSZip</th><th>JSZipp</th></tr></thead><tbody>
+        <tr><td>Architecture</td><td>Mutable in-memory archive object</td><td>Append-style writer plus random-access and iterator readers</td></tr>
+        <tr><td>Writing API</td><td><code>zip.file()</code>, <code>zip.folder()</code>, <code>generateAsync()</code></td><td><code>writer.add()</code>, <code>writer.close()</code>, <code>ZipTransformStream</code></td></tr>
+        <tr><td>Reading API</td><td><code>JSZip.loadAsync()</code>, <code>zip.file(path).async(type)</code></td><td><code>openZip(source)</code>, <code>reader.get(path)</code>, <code>readZipStream(stream)</code></td></tr>
+        <tr><td>Modification model</td><td>Load, mutate, remove, overwrite, then generate</td><td>Open old archive and write a new archive</td></tr>
+        <tr><td>Output types</td><td>Browser and Node-oriented types, including Base64 and Node <code>Buffer</code></td><td>Web-native <code>ReadableStream</code>, <code>Blob</code>, <code>Response</code>, <code>Uint8Array</code>, <code>ArrayBuffer</code></td></tr>
+        <tr><td>Streaming</td><td>Archive-object oriented with stream-related options</td><td>Stream-shaped output APIs, but each entry is materialized before it is written</td></tr>
+        <tr><td>ZIP64</td><td>Can load ZIP64 within JavaScript number and memory limits</td><td>Writes and reads ZIP64, rejecting values beyond <code>Number.MAX_SAFE_INTEGER</code></td></tr>
+        <tr><td>Runtime target</td><td>Broad compatibility surface</td><td>Modern browsers with Web Streams, <code>Blob</code>, and <code>DecompressionStream</code> for deflated reads</td></tr>
       </tbody></table>
+      <h2>Migration dealbreakers</h2>
+      <p>If your code depends on any of these JSZip patterns, the migration is a reshape, not a method rename.</p>
+      <h3>1. Fluent folder and file chaining</h3>
+      <p>JSZip supports a mutable folder tree. JSZipp does not expose nested folder objects; pass full ZIP paths instead.</p>
+      <pre><code>// JSZip
+const zip = new JSZip();
+zip.folder("images")?.file("logo.png", data);
+
+// JSZipp
+import { ZipWriter } from "web-jszipp";
+
+const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "images/logo.png", data });
+const zipBlob = await writer.close();
+</code></pre>
+      <p>Directories are explicit entries when you need them:</p>
+      <pre><code>await writer.add({ path: "images/", data: "" });</code></pre>
+      <h3>2. In-place modifications</h3>
+      <p>JSZip lets you mutate a loaded archive. JSZipp does not. To remove or replace files, rebuild a new archive from the old one.</p>
+      <pre><code>import { ZipWriter, openZip } from "web-jszipp";
+
+const source = await openZip(input);
+const writer = new ZipWriter({ outputAs: "blob" });
+
+for (const entry of source.entries) {
+  if (entry.path === "temp.txt") continue;
+  await writer.add({
+    path: entry.path,
+    data: entry.isDirectory ? "" : await entry.bytes(),
+    meta: {
+      comment: entry.comment,
+      extraField: entry.extraField,
+      modifiedAt: entry.modifiedAt,
+      externalAttributes: entry.externalAttributes
+    }
+  });
+}
+
+await writer.add({ path: "report.txt", data: newReport });
+const output = await writer.close();
+await source.close();</code></pre>
+      <p>That pattern rebuilds the archive and materializes each copied entry when <code>entry.bytes()</code> is used.</p>
+      <h3>3. Synchronous input limits</h3>
+      <p><code>writeSync()</code> and <code>closeSync()</code> exist, but only for synchronously readable data.</p>
+      <pre><code>const writer = new ZipWriter({ outputAs: "uint8array" });
+writer.writeSync({ path: "hello.txt", data: "Hello" });
+const bytes = writer.closeSync();</code></pre>
+      <p><code>writeSync()</code> accepts <code>string</code>, <code>Uint8Array</code>, and <code>ArrayBuffer</code>. Use async <code>add()</code> for <code>Blob</code> and <code>ReadableStream&lt;Uint8Array&gt;</code>. Do not mix async and sync modes on one writer.</p>
+      <h3>4. Legacy browser and Node-specific APIs</h3>
+      <p>JSZipp targets modern browser primitives and does not directly provide JSZip's Base64 or Node <code>Buffer</code> output modes. If you need older browsers or Node-oriented ZIP outputs from the library itself, staying on JSZip may be the simpler choice.</p>
       <h2>Create a ZIP Blob</h2>
       <pre><code>import { ZipWriter } from "web-jszipp";
 
@@ -24,14 +79,76 @@ const blob = await writer.close();</code></pre>
 const zip = await openZip(file, { pathMode: "strict-package" });
 const readme = await zip.get("README.md")?.text();
 await zip.close();</code></pre>
-      <h2>Migration dealbreakers</h2>
-      <ul>
-        <li>No fluent folder object API. Pass full ZIP paths such as <code>images/logo.png</code>.</li>
-        <li>No in-place mutation. Rebuild an archive when removing or replacing entries.</li>
-        <li>Synchronous writing accepts only <code>string</code>, <code>Uint8Array</code>, and <code>ArrayBuffer</code> data.</li>
-        <li>Legacy browser and Node-specific output modes are outside the main target.</li>
-      </ul>
-      <p>See the source maintenance notes in <code>docs/migrate-from-jszip.md</code> for the long-form migration guide.</p>
+      <h2>Where JSZipp fits better</h2>
+      <h3>1. Smaller browser-focused dependency surface</h3>
+      <p>JSZipp has no runtime dependencies. ZIP writing uses its in-repo raw DEFLATE encoder; reading deflated entries delegates inflation to the platform's <code>DecompressionStream</code> when needed.</p>
+      <h3>2. Web-native output shapes</h3>
+      <p><code>ZipWriter</code> can return a <code>ReadableStream</code>, <code>Blob</code>, <code>Response</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code>.</p>
+      <pre><code>const stream = await new ZipWriter().close();
+const blob = await new ZipWriter({ outputAs: "blob" }).close();
+const response = await new ZipWriter({ outputAs: "response" }).close();</code></pre>
+      <p>The default output is a <code>ReadableStream&lt;Uint8Array&gt;</code>. That is useful for browser pipelines and service-worker-style responses, but it is still not true streaming compression of each source file.</p>
+      <h3>3. ZIP64 writing and reading</h3>
+      <p>JSZipp supports ZIP64 in both writer and reader code. Use <code>zip64: "off"</code> if you want standard ZIP only and prefer a hard error when ZIP64 would be required.</p>
+      <pre><code>const writer = new ZipWriter({
+  zip64: "auto",
+  outputAs: "blob"
+});</code></pre>
+      <h3>4. Safer path defaults when reading</h3>
+      <p><code>openZip()</code> rejects unsafe paths by default, including <code>..</code>, absolute paths, drive-letter paths, backslash-separated paths, and NUL-byte paths.</p>
+      <pre><code>const reader = await openZip(file, { pathMode: "strict" });</code></pre>
+      <p>For untrusted packages or uploads, use <code>pathMode: "strict-package"</code> to add a local/central size cross-check and reject duplicate or colliding entry paths after case and Unicode normalization.</p>
+      <pre><code>const reader = await openZip(untrustedUpload, {
+  pathMode: "strict-package"
+});</code></pre>
+      <h2>Common JSZip to JSZipp translations</h2>
+      <h3>Create a ZIP Blob</h3>
+      <pre><code>// JSZip
+const zip = new JSZip();
+zip.file("hello.txt", "Hello");
+const blob = await zip.generateAsync({ type: "blob" });
+
+// JSZipp
+const writer = new ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "hello.txt", data: "Hello" });
+const blob2 = await writer.close();</code></pre>
+      <h3>Read one file</h3>
+      <pre><code>// JSZip
+const zip = await JSZip.loadAsync(file);
+const text = await zip.file("docs/readme.md")?.async("text");
+
+// JSZipp
+const reader = await openZip(file);
+const text2 = await reader.get("docs/readme.md")?.text();
+await reader.close();</code></pre>
+      <h3>Preserve duplicate names</h3>
+      <p>JSZipp exposes archive order directly. The default reader preserves duplicate paths; <code>reader.get(path)</code> returns the most recently appended matching entry.</p>
+      <pre><code>const reader = await openZip(file);
+const copies = reader.entries.filter((entry) =&gt; entry.path === "data.json");
+const latest = reader.get("data.json");</code></pre>
+      <h2>Decision matrix</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>Stay on JSZip if</h3>
+          <ul>
+            <li>Your code depends on <code>zip.folder().file()</code> and a mutable archive object.</li>
+            <li>You need to remove or overwrite files inside a loaded archive before generating output.</li>
+            <li>You need Base64 or Node <code>Buffer</code> output modes from the ZIP library itself.</li>
+            <li>You target older browsers or broad legacy environments.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Consider JSZipp if</h3>
+          <ul>
+            <li>Your app targets modern browsers and Web Streams.</li>
+            <li>You want a compact, dependency-free ZIP package.</li>
+            <li>Your output naturally wants <code>ReadableStream</code>, <code>Blob</code>, <code>Response</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code>.</li>
+            <li>You need ZIP64 writing or reading within JavaScript's safe integer range.</li>
+            <li>You can rebuild archives instead of mutating them in place.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout danger"><strong>Do not migrate solely for one huge file:</strong> JSZipp's public APIs are stream-shaped, but the current writer still materializes each entry before emitting it.</div>
     </main></div>
     <footer class="footer" data-site-footer></footer>
   </body>

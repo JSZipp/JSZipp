@@ -35,11 +35,129 @@
           <li>No unreleased user-facing changes are documented yet.</li>
         </ul>
 
-        <h2>1.0.6 - 2026-06-07</h2>
+        <h2>1.0.7 - 2026-06-08</h2>
         <div class="callout">
           <strong>Current package version.</strong>
-          This release fixes legacy compatibility and safety gaps, strengthens release validation,
-          and updates docs to match the implemented browser, stream, and test behavior.
+          This release adds an opt-in Web Worker writer backend, ships worker plugin and worker
+          script subpaths for modern and legacy browser builds, expands migration and API docs, and
+          consolidates the repository's normative documentation under <code>specs/</code>.
+        </div>
+
+        <h3>Added</h3>
+        <ul>
+          <li>
+            Added opt-in worker-backed async entry preparation for
+            <code>ZipWriter.add()</code> through <code>createWorkerBackend()</code> in the new
+            <code>web-jszipp/worker-plugin</code> subpath.
+          </li>
+          <li>
+            Added worker-backend controls for lazy worker construction, optional local fallback,
+            byte transfer strategy (<code>"copy"</code>, <code>"auto"</code>,
+            <code>"transfer"</code>), and a <code>minSize</code> threshold before async entries
+            are offloaded.
+          </li>
+          <li>
+            Added worker script package subpaths so applications can host static worker files under
+            their own CSP and extension rules: <code>web-jszipp/worker-script</code> plus matching
+            <code>browser-legacy/cr61ff58</code> and <code>browser-legacy/cr86ff68</code> worker
+            plugin and worker script subpaths.
+          </li>
+          <li>
+            Added the dedicated worker preparation runtime and packaging outputs for modern module
+            workers and legacy classic workers.
+          </li>
+          <li>
+            Added export coverage for the new worker plugin and worker script package subpaths
+            across ESM, CommonJS, UMD, and both legacy browser build families.
+          </li>
+          <li>
+            Added a worker-compression demo page that visualizes main-thread stalls while comparing
+            JSZipp's normal writer path, JSZipp worker-backed writing, <code>fflate</code>, and
+            native compression primitives.
+          </li>
+          <li>
+            Added worker-backend regression coverage for byte-identical output, sync-path isolation,
+            backend reuse, fallback behavior, UTF-8 <code>minSize</code> handling, abort isolation,
+            and package export validation.
+          </li>
+          <li>
+            Added <code>specs/README.md</code> to define the repository's normative specification
+            set.
+          </li>
+        </ul>
+
+        <h3>Changed</h3>
+        <ul>
+          <li>
+            Kept the default <code>web-jszipp</code> import worker-free. Worker writing is now an
+            explicit opt-in on <code>ZipWriter</code> through the <code>worker</code> option.
+          </li>
+          <li>
+            Extended the public writer configuration surface with the shared
+            <code>ZipWorkerBackend</code> option while keeping synchronous writer methods on the
+            original local code path.
+          </li>
+          <li>
+            Expanded the API reference, installation guide, examples page, and README with worker
+            plugin usage, worker-source lifecycle guidance, transfer-mode behavior, size-threshold
+            tuning, and compat-build examples.
+          </li>
+          <li>
+            Reworked the upgrade guide into a full JSZip-to-JSZipp migration reference covering
+            architecture differences, dealbreakers, translation examples, safer reader defaults,
+            ZIP64 behavior, and decision guidance.
+          </li>
+          <li>
+            Replaced the standalone migration document with the expanded upgrade guide and updated
+            site navigation and cross-links to point at the new <code>specs/</code> locations.
+          </li>
+          <li>
+            Moved the repository's behavioral and maintenance documents from scattered
+            <code>docs/</code> locations into the unified <code>specs/</code> tree and updated
+            documentation links accordingly.
+          </li>
+        </ul>
+
+        <h3>Fixed</h3>
+        <ul>
+          <li>
+            Preserved older-browser compatibility for the worker plugin builds by validating the
+            compat outputs and avoiding direct <code>AbortSignal.throwIfAborted()</code> calls in
+            generated legacy worker-plugin bundles.
+          </li>
+          <li>
+            Ensured worker-prepared async entries produce the same ZIP bytes as the normal in-thread
+            writer path for the same inputs and metadata.
+          </li>
+          <li>
+            Kept the deprecated <code>worker</code> alias for <code>workerSource</code> working in
+            the worker plugin so existing integration code keeps running while migrating to the new
+            option name.
+          </li>
+        </ul>
+
+        <h3>Compatibility</h3>
+        <ul>
+          <li>
+            Preserved the public writer and reader API across the default modern build and both
+            legacy browser targets while adding parallel worker plugin entry points.
+          </li>
+          <li>
+            Kept synchronous <code>writeSync()</code> and <code>closeSync()</code> local-only; they
+            do not depend on worker availability and do not route through the worker backend.
+          </li>
+        </ul>
+
+        <h3>Breaking changes</h3>
+        <ul>
+          <li>No breaking public API changes.</li>
+        </ul>
+
+        <h2>1.0.6 - 2026-06-07</h2>
+        <div class="callout">
+          <strong>Previous patch release.</strong>
+          This release fixed legacy compatibility and safety gaps, strengthened release validation,
+          and updated docs to match the implemented browser, stream, and test behavior.
         </div>
 
         <h3>Fixed</h3>
@@ -153,11 +271,6 @@
             <code>openZip</code>, <code>readZipStream</code>, and
             <code>TimestampMode</code>.
           </li>
-        </ul>
-
-        <h3>Breaking changes</h3>
-        <ul>
-          <li>No breaking public API changes.</li>
         </ul>
 
         <h2>Earlier 1.0.x patch tags</h2>

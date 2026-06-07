@@ -1,5 +1,8 @@
 # Bundle-Size Optimization Rules (JS / TS)
 
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
+
 A reusable playbook for shrinking the **final minified bundle** without changing
 behavior, output, or time/space complexity. Apply these to any project.
 

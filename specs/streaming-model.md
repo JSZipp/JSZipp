@@ -1,4 +1,7 @@
-# Why JSZipp Does Not Use True Streaming Compression
+# Streaming Model Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 JSZipp intentionally does **not** implement true streaming ZIP compression in its current design. Although the public writer can expose a `ReadableStream` output, each ZIP entry is still prepared as a complete unit before it is written to the archive.
 

@@ -73,6 +73,56 @@ await writer.add({ path: "hello.txt", data: "Hello World\n" });
 
 const zipBytes = await writer.close(); // Uint8Array</code></pre>
 
+        <h2>Use a Web Worker for large writes</h2>
+        <p>Load the worker plugin only where large async <code>add()</code> calls should prepare and compress entries off the main thread. Host the static worker script yourself so normal CSP and extension rules apply.</p>
+        <p>
+          See the
+          <a href="../demo/worker-compression-demo.html">worker responsiveness demo</a>
+          for a live comparison of main-thread stalls and throughput across the normal writer path,
+          JSZipp worker-backed writing, and other browser compression options.
+        </p>
+        <pre><code>import { ZipWriter } from "web-jszipp";
+import { createWorkerBackend } from "web-jszipp/worker-plugin";
+
+const worker = createWorkerBackend({
+  workerSource: () =&gt; new Worker(browser.runtime.getURL("vendor/jszipp.worker.mjs"), {
+    type: "module"
+  }),
+  minSize: 512 * 1024
+});
+
+try {
+  const writer = new ZipWriter({ outputAs: "blob", worker });
+
+  for (const file of input.files) {
+    await writer.add({ path: file.webkitRelativePath || file.name, data: file });
+  }
+
+  const zipBlob = await writer.close();
+} finally {
+  worker.terminate();
+}</code></pre>
+
+        <h2>Use the worker plugin with a compat build</h2>
+        <p>Compat pages use the matching compat worker plugin and a classic worker script. The CR61FF58 build follows the same pattern with <code>cr61ff58</code> paths.</p>
+        <pre><code>&lt;script src="vendor/cr86ff68/jszipp.umd.js"&gt;&lt;/script&gt;
+&lt;script src="vendor/cr86ff68/jszipp.worker-plugin.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+const worker = JSZippWorkerPlugin.createWorkerBackend({
+  workerSource: () =&gt; new Worker(browser.runtime.getURL("vendor/cr86ff68/jszipp.worker.js"))
+});
+
+async function pack(file) {
+  try {
+    const writer = new JSZipp.ZipWriter({ outputAs: "blob", worker });
+    await writer.add({ path: file.name, data: file });
+    return await writer.close();
+  } finally {
+    worker.terminate();
+  }
+}
+&lt;/script&gt;</code></pre>
+
         <h2>Read a ZIP file</h2>
         <p><code>openZip()</code> is the random-access reader. It exposes archive entries and helpers such as <code>text()</code>, <code>bytes()</code>, <code>arrayBuffer()</code>, and <code>stream()</code>.</p>
         <pre><code>const zip = await openZip(content, {

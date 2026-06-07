@@ -1,4 +1,7 @@
-# Testing Overview and Limitations
+# Testing Requirements
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 This document summarizes what the current `test/jszipp.test.ts` suite is designed
 to prove, where it intentionally goes deeper than public round trips, and where
@@ -29,7 +32,8 @@ Covered behavior includes:
 
 - Default namespace export and named API exports.
 - Published package export map coverage for ESM and CommonJS root,
-  `jszipp/writer`, and `jszipp/reader` entry points.
+  browser legacy subpaths, worker plugin subpaths, and emitted worker script
+  artifacts.
 - Stored entries when `level: 0` is used.
 - Deflated entries with metadata preservation.
 - Archive comments and entry comments.
@@ -43,6 +47,8 @@ Covered behavior includes:
 - Rejection of writes or closes after the writer is already closed.
 - Rejection of duplicate normalized entry paths while writing.
 - Progress callbacks and abort signals.
+- Worker backend round trips, fallback behavior, backend reuse, and the rule that
+  synchronous writer methods remain local.
 - Per-entry compression method overrides.
 - Per-entry compression level overrides.
 - Invalid compression level validation.
@@ -51,6 +57,12 @@ Covered behavior includes:
 
 The sync writer tests intentionally stay focused on in-memory inputs, because
 `Blob` and `ReadableStream` cannot be consumed synchronously.
+
+The worker backend tests run with a fake in-process `Worker`. They prove the
+public backend contract and archive bytes, including byte-identical output versus
+the normal in-thread writer, but they do not prove that browser worker script
+URLs, extension CSP, or classic-versus-module worker loading are configured
+correctly. Those are covered by build artifact checks plus the worker demo.
 
 ### Reader APIs
 

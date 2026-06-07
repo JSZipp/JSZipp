@@ -1,4 +1,7 @@
-# Filename Charset Handling
+# Filename Charset Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 ZIP filenames are byte sequences. They are not always self-describing, so the
 same filename bytes can produce different text depending on the charset used to

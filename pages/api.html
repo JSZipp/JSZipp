@@ -141,6 +141,7 @@
             <li><a href="#choose">Which API should I use?</a></li>
             <li><a href="#import">Importing</a></li>
             <li><a href="#zipwriter"><code>new ZipWriter()</code></a></li>
+            <li><a href="#worker-plugin">Worker plugin</a></li>
             <li><a href="#ziptransformstream"><code>new ZipTransformStream()</code></a></li>
             <li><a href="#openzip"><code>openZip()</code></a></li>
             <li><a href="#readzipstream"><code>readZipStream()</code></a></li>
@@ -167,6 +168,7 @@
             <tr><td>Create a ZIP <code>Blob</code></td><td><code>new ZipWriter({ outputAs: "blob" })</code></td><td>Easiest path for downloads and uploads.</td></tr>
             <tr><td>Create a ZIP HTTP <code>Response</code></td><td><code>new ZipWriter({ outputAs: "response" })</code></td><td>Returns a native <code>Response</code> with <code>Content-Type: application/zip</code>.</td></tr>
             <tr><td>Create a byte stream</td><td><code>new ZipWriter()</code></td><td>Default output is <code>ReadableStream&lt;Uint8Array&gt;</code>.</td></tr>
+            <tr><td>Move large async entry preparation off the main thread</td><td><code>createWorkerBackend()</code> + <code>new ZipWriter({ worker })</code></td><td>Opt-in Web Worker backend; the default build remains worker-free.</td></tr>
             <tr><td>Create raw bytes synchronously</td><td><code>writer.writeSync()</code> / <code>closeSync()</code></td><td>In-memory inputs only; no <code>await</code>.</td></tr>
             <tr><td>Plug into a Web Streams pipeline</td><td><code>new ZipTransformStream()</code></td><td><code>TransformStream</code> of entries in, bytes out.</td></tr>
             <tr><td>Open a user-supplied ZIP</td><td><code>openZip(source, options)</code></td><td>Random-access reader for <code>Blob</code>, <code>File</code>, <code>Uint8Array</code>, or <code>ArrayBuffer</code>.</td></tr>
@@ -191,6 +193,11 @@
 // Named imports and the namespace are equivalent:
 const a = new ZipWriter();
 const b = new JSZipp.ZipWriter();</code></pre>
+        <p>
+          The worker plugin is a separate subpath so ordinary imports do not include worker-only
+          code.
+        </p>
+        <pre><code>import { createWorkerBackend } from "web-jszipp/worker-plugin";</code></pre>
 
         <!-- ============================================================ -->
         <h2 class="sig" id="zipwriter"><code>new ZipWriter(options?)</code></h2>
@@ -227,8 +234,9 @@ const zipBlob = await writer.close(); // Blob, because outputAs === "blob"</code
           specification itself (<code>level</code>, <code>zip64</code>, <code>comment</code>,
           <code>timestamps</code>, <code>pathMode</code>, <code>explicitDirectoryEntries</code>) lives
           on <code>ZipEncoderOptions</code>, so <code>ZipWriter</code> and
-          <code>ZipTransformStream</code> share it; only <code>outputAs</code> and
-          <code>mimeType</code> are writer-specific.
+          <code>ZipTransformStream</code> share it. The optional <code>worker</code> backend also
+          lives there because it changes where async entries are prepared without changing ZIP bytes;
+          only <code>outputAs</code> and <code>mimeType</code> are writer-specific.
         </p>
         <table>
           <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
@@ -243,10 +251,11 @@ const zipBlob = await writer.close(); // Blob, because outputAs === "blob"</code
             <tr><td><code>explicitDirectoryEntries</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Materializes parent directory entries.</td></tr>
             <tr><td><code>signal</code></td><td><code>AbortSignal</code></td><td>—</td><td>Cancels between stream reads and structure steps.</td></tr>
             <tr><td><code>onProgress</code></td><td><code>(p: ZipProgress) =&gt; void</code></td><td>—</td><td>Coarse progress callback. <a href="#progress">See progress</a>.</td></tr>
+            <tr><td><code>worker</code></td><td><code>ZipWorkerBackend</code></td><td>—</td><td>Optional async entry preparation backend. <a href="#worker-plugin">See worker plugin</a>.</td></tr>
           </tbody>
         </table>
 
-        <details class="acc">
+        <details class="acc" id="zipwriter-outputas-details">
           <summary><code>outputAs</code> — choosing the output shape</summary>
           <div class="acc-body">
             <p>
@@ -272,7 +281,7 @@ await upload;</code></pre>
           </div>
         </details>
 
-        <details class="acc">
+        <details class="acc" id="zipwriter-level-details">
           <summary><code>level</code> &amp; per-entry <code>method</code> — compression control</summary>
           <div class="acc-body">
             <p>
@@ -299,7 +308,7 @@ await writer.add({ path: "huge.log", data: log, level: 9 });        // override 
           </div>
         </details>
 
-        <details class="acc">
+        <details class="acc" id="zipwriter-zip64-details">
           <summary><code>zip64</code> — large-archive framing</summary>
           <div class="acc-body">
             <p>
@@ -320,7 +329,7 @@ await writer.add({ path: "huge.log", data: log, level: 9 });        // override 
           </div>
         </details>
 
-        <details class="acc">
+        <details class="acc" id="zipwriter-timestamps-details">
           <summary><code>timestamps</code> &amp; reproducible output</summary>
           <div class="acc-body">
             <p>
@@ -382,7 +391,7 @@ const bytes = await writer.close(); // byte-identical across runs</code></pre>
           </div>
         </details>
 
-        <details class="acc">
+        <details class="acc" id="zipwriter-explicit-directories-details">
           <summary><code>explicitDirectoryEntries</code> — parent directory entries</summary>
           <div class="acc-body">
             <p>
@@ -393,6 +402,113 @@ const bytes = await writer.close(); // byte-identical across runs</code></pre>
             <p>
               The default keeps the historical behavior: only caller-added directory entries are
               written. JSZipp never scans for empty directories; add those explicitly.
+            </p>
+          </div>
+        </details>
+
+
+        <h3 id="worker-plugin">Worker plugin</h3>
+        <p>
+          Use <code>createWorkerBackend()</code> when large async entries should be prepared and
+          compressed in a Web Worker. JSZipp never creates blob URL workers internally; pass a
+          worker factory that points at a static script allowed by your app or extension CSP.
+        </p>
+        <pre><code>import { ZipWriter } from "web-jszipp";
+import { createWorkerBackend } from "web-jszipp/worker-plugin";
+
+const worker = createWorkerBackend({
+  workerSource: () =&gt; new Worker("/vendor/jszipp.worker.mjs", { type: "module" }),
+  fallback: true,       // default; fall back to in-thread preparation when unavailable
+  transfer: "copy",     // default; "auto" and "transfer" are also available
+  minSize: 256 * 1024   // optional threshold before using the worker
+});
+
+try {
+  const writer = new ZipWriter({ outputAs: "blob", worker });
+  await writer.add({ path: "large.bin", data: file });
+  const blob = await writer.close();
+} finally {
+  worker.terminate();
+}</code></pre>
+        <table>
+          <thead><tr><th>Plugin option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>workerSource</code></td><td><code>Worker | (() =&gt; Worker)</code></td><td>required</td><td>Worker instance or factory used by the backend. <a href="#worker-source-details">See workerSource details</a>.</td></tr>
+            <tr><td><code>fallback</code></td><td><code>boolean</code></td><td><code>true</code></td><td>When worker preparation is unavailable or cannot clone an input, use the normal in-thread path. Set to <code>false</code> to reject instead.</td></tr>
+            <tr><td><code>transfer</code></td><td><code>"copy" | "auto" | "transfer"</code></td><td><code>"copy"</code></td><td>Controls whether byte-array inputs are copied or transferred to the worker. <a href="#worker-transfer-details">See transfer details</a>.</td></tr>
+            <tr><td><code>minSize</code></td><td><code>number</code></td><td><code>32768</code></td><td>Known input size below which the backend returns to the normal path.</td></tr>
+          </tbody>
+        </table>
+        <details class="acc" id="worker-source-details">
+          <summary><code>workerSource</code> — why it accepts two forms</summary>
+          <div class="acc-body">
+            <p>
+              <code>workerSource</code> accepts either a plain <code>Worker</code> instance or a
+              factory function <code>() =&gt; new Worker(...)</code>.
+            </p>
+            <p>
+              Use the factory form in most cases. It lets the backend create the worker lazily only
+              when large async entries actually need offload, recreate a fresh worker after
+              <code>terminate()</code> or a crash, and still honor <code>fallback</code> if worker
+              construction throws.
+            </p>
+            <p>
+              Pass a plain <code>Worker</code> only when your code deliberately owns one specific
+              pre-created instance and wants to hand that exact instance to the backend.
+            </p>
+            <p>
+              The modern ESM build uses <code>web-jszipp/worker-plugin</code> with
+              <code>dist/jszipp.worker.mjs</code> as a module worker. The modern UMD build can
+              load <code>dist/jszipp.worker-plugin.umd.js</code> and
+              <code>dist/jszipp.worker.js</code> as classic scripts. Compat builds must use
+              matching compat artifacts: <code>dist/cr61ff58/jszipp.worker-plugin.umd.js</code>
+              with <code>dist/cr61ff58/jszipp.worker.js</code>, or
+              <code>dist/cr86ff68/jszipp.worker-plugin.umd.js</code> with
+              <code>dist/cr86ff68/jszipp.worker.js</code>. Do not pass
+              <code>{ type: "module" }</code> for compat worker scripts.
+            </p>
+          </div>
+        </details>
+
+        <details class="acc" id="worker-transfer-details">
+          <summary><code>transfer</code> — <code>"copy"</code> vs <code>"auto"</code> vs <code>"transfer"</code></summary>
+          <div class="acc-body">
+            <p>
+              This option applies only to <code>ArrayBuffer</code> and <code>Uint8Array</code> entry
+              data sent to the worker. <code>string</code>, <code>Blob</code>, and
+              <code>ReadableStream</code> inputs do not use this setting. The tradeoff is whether the
+              backend should preserve caller ownership of the original bytes or reduce copying.
+            </p>
+            <dl class="deflist">
+              <dt><code>"copy"</code> (default)</dt><dd>Never transfers the caller's buffer. Full <code>ArrayBuffer</code> and <code>Uint8Array</code> inputs go through the normal clone path, so the original bytes remain usable after <code>add()</code>.</dd>
+              <dt><code>"auto"</code></dt><dd>Conservative mixed mode. Full buffers still behave like <code>"copy"</code>, but a partial <code>Uint8Array</code> view is first copied into a tight new buffer and that new copy is transferred to the worker. This avoids detaching the caller's original backing buffer while still avoiding an extra clone of the temporary copy.</dd>
+              <dt><code>"transfer"</code></dt><dd>Transfers full <code>ArrayBuffer</code> inputs and full-span <code>Uint8Array</code> inputs directly to the worker. That reduces duplication, but the transferred buffer is detached on the caller side and must be treated as consumed.</dd>
+            </dl>
+            <p>
+              For a partial <code>Uint8Array</code> view, JSZipp cannot transfer the original backing
+              buffer without also transferring unrelated bytes outside the view. In that case, both
+              <code>"auto"</code> and <code>"transfer"</code> create a tight copy for the visible
+              slice and transfer that copy instead.
+            </p>
+            <p>
+              Use <code>"copy"</code> when the caller still needs the original bytes after
+              <code>add()</code>. Use <code>"transfer"</code> when the buffer is one-shot input and
+              peak memory matters more than reusing it. Use <code>"auto"</code> when many inputs are
+              shared or sliced views and you want the safer default for owned buffers.
+            </p>
+            <pre><code>const shared = new Uint8Array(bigBuffer, 1024, 4096);
+
+// Safe for re-use: caller keeps shared/bigBuffer intact.
+const copyWorker = createWorkerBackend({ workerSource, transfer: "copy" });
+
+// Transfers only a tight copy of the visible slice, not bigBuffer itself.
+const autoWorker = createWorkerBackend({ workerSource, transfer: "auto" });
+
+// Full owned buffers are detached after add(); partial views still become tight transferred copies.
+const transferWorker = createWorkerBackend({ workerSource, transfer: "transfer" });</code></pre>
+            <p>
+              The default is <code>"copy"</code> because detaching caller-owned buffers is easy to
+              misuse and can make later application code fail in surprising ways.
             </p>
           </div>
         </details>
@@ -643,6 +759,7 @@ for await (const entry of readZipStream(response.body, { maxEntrySize: 5 * 1024 
     await entry.skip(); // consume the payload you do not need
   }
 }</code></pre>
+        <div class="callout"><strong>Compat note:</strong> when targeting the <code>cr61ff58</code> build, the library still returns an async-iterable reader, but Chrome 61 cannot parse raw <code>for await...of</code> in your application code. Transpile your code for that browser, or iterate the returned async iterable manually.</div>
         <div class="callout"><strong>Note:</strong> the current implementation collects the source stream and parses the Central Directory before iterating, to avoid ambiguous local-header parsing while the lower-level streaming decoder is hardened. The iterator contract is forward-only.</div>
 
         <!-- ============================================================ -->

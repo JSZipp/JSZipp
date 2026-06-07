@@ -5,7 +5,8 @@
     "declaration": true,
     "declarationMap": false,
     "outDir": "dist",
+    "stripInternal": true,
     "noEmit": false
   },
-  "include": ["src/index.ts", "src/writer.ts", "src/reader.ts", "src/types.ts"]
+  "include": ["src/index.ts", "src/writer.ts", "src/reader.ts", "src/worker-plugin.ts", "src/types.ts"]
 }

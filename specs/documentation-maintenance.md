@@ -1,12 +1,19 @@
 # Documentation Maintenance Guidelines
 
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
+
 This guide describes how to keep markdown documentation maintainable across any
 project that has multiple docs for different audiences. It also includes the
-JSZipp-specific ownership map used by this repository.
+JSZipp-specific ownership map used by this repository after consolidation into a
+single normative `specs/` folder.
 
 The core rule is simple: each topic should have one canonical home. Other docs
 may summarize or link to that home, but should not duplicate the full
 explanation.
+
+For this repository, all normative specifications live under `specs/`. No
+normative document belongs in `pages/` or the repository root.
 
 ## Why This Matters
 
@@ -44,11 +51,9 @@ For this repository, use this concrete mapping:
 | Document | Owns |
 | -------- | ---- |
 | `README.md` | User-facing overview, common usage, short examples, and links to deeper docs. |
-| `CONTRACT.md` | Public API guarantees, supported behavior, errors, and compatibility promises. |
-| `docs/implementation.md` | Source-level implementation flow, internal invariants, and why the code is structured that way. |
-| `docs/zip-metadata-traps.md` | Generic ZIP-format metadata explanations, interoperability traps, and validation guidance. |
-| Topic docs such as `docs/charset.md`, `docs/timezone.md`, `docs/memory.md`, and `docs/streaming.md` | Deep dives for one focused topic. |
-| `docs/testing.md` | Test coverage goals, byte-level checks, known test limits, and residual risk. |
+| `specs/` | The only folder allowed to contain normative behavior, compatibility promises, validation rules, implementation constraints, and contributor process. |
+| `specs/implementation.md` | Source-level implementation flow, internal invariants, and why the code is structured that way. |
+| `pages/upgrade-guide.html`, `specs/e2e-smoke-test.md`, and `specs/bundle-size-optimization-rules.md` | Migration content for users, plus operational procedure and optimization rules for maintainers. |
 | Demo files | UI behavior, benchmark interpretation, and demo-specific display choices. |
 
 ## Avoid Duplicate Explanations
@@ -102,9 +107,9 @@ Many bugs in docs come from mixing three different layers:
 
 For JSZipp ZIP metadata:
 
-- Generic ZIP rules belong in `docs/zip-metadata-traps.md`.
-- JSZipp guarantees belong in `CONTRACT.md`.
-- JSZipp internals belong in `docs/implementation.md`.
+- Generic ZIP validation rules belong in `specs/zip-validation.md`.
+- JSZipp guarantees belong in `specs/api-contract.md`.
+- JSZipp internals belong in `specs/implementation.md`.
 - Usage guidance belongs in `README.md`.
 - Demo rendering choices belong in the demo file or a demo-specific note.
 
@@ -113,7 +118,7 @@ Example:
 ```markdown
 Generated archives use ZIP method `0x0008` for deflated entries. For the
 ZIP-format distinction between compression method values and general-purpose bit
-flags, see [ZIP metadata traps](zip-metadata-traps.md#compression-method-and-general-purpose-bit-flags).
+flags, see [ZIP validation spec](../specs/zip-validation.md#21-the-compression-method-compatibility-trap).
 ```
 
 This keeps the detailed method/flag explanation in one place.
@@ -181,8 +186,8 @@ Prefer this generic pattern:
 
 ```markdown
 README.md: "What should a user do?"
-CONTRACT.md or API docs: "What does the project guarantee?"
-docs/implementation.md: "How does the source implement it?"
+specs/: "What does the project require and guarantee?"
+specs/implementation.md: "How does the source implement it?"
 domain reference: "What does the external format/protocol/domain mean?"
 demo docs: "How does this example or UI present it?"
 ```
@@ -191,9 +196,9 @@ For this repository:
 
 ```markdown
 README.md: "What should a JSZipp user do?"
-CONTRACT.md: "What does JSZipp guarantee?"
-docs/implementation.md: "How does the JSZipp source implement it?"
-docs/zip-metadata-traps.md: "What does the ZIP format mean?"
+specs/api-contract.md: "What does JSZipp guarantee?"
+specs/implementation.md: "How does the JSZipp source implement it?"
+specs/zip-validation.md: "What does the ZIP format require JSZipp to validate?"
 demo files: "How does this demo display or benchmark it?"
 ```
 

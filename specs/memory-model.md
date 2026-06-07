@@ -1,4 +1,7 @@
-# Memory Control and Usage Concerns in JSZipp
+# Memory Model Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 JSZipp is designed to provide a compact ZIP writer and reader for JavaScript environments. It supports stream-shaped APIs, Blob/File inputs, byte-array inputs, synchronous writing, asynchronous writing, ZIP64, CRC32 validation, and raw DEFLATE compression.
 

@@ -1,4 +1,7 @@
-# Browser Compatibility & the Polyfill Architecture
+# Browser Compatibility Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 This is the **canonical** document for how JSZipp supports older browsers: which
 targets exist, what each one is missing, and exactly how the source, the polyfill
@@ -13,12 +16,12 @@ polyfills.
 
 What lives elsewhere (this doc links, it does not duplicate):
 
-- Public, versioned compatibility promises and error categories → `CONTRACT.md`.
+- Public, versioned compatibility promises and error categories → `api-contract.md`.
 - User-facing install, the `browser-legacy/*` subpaths, and CDN tags → `README.md`.
 - Why the Web Streams surface is shaped the way it is, and why JSZipp does not do
-  true streaming compression → `streaming.md`.
+  true streaming compression → `streaming-model.md`.
 - Source-level flow and invariants (including Abort support) → `implementation.md`.
-- What the tests prove and do not prove → `testing.md`.
+- What the tests prove and do not prove → `testing-requirements.md`.
 
 ---
 
@@ -70,7 +73,12 @@ Notes that matter:
   `TransformStream`** even though Chrome 86 has it. CR61FF58 downlevels async
   generators because **Chrome 61 lacks them** even though Firefox 58 has them.
 - The version numbers below are practical baselines, not contractual minimums;
-  `CONTRACT.md` owns the stable promises.
+  `api-contract.md` owns the stable promises.
+- Worker support is opt-in and split across two artifacts per build: a
+  `worker-plugin` entry loaded by the page and a static `worker` script loaded by
+  `new Worker(...)`. Always pair artifacts from the same build family. The modern
+  ESM script is a module worker; the compat worker scripts are classic UMD
+  workers.
 
 ---
 
@@ -127,7 +135,12 @@ the real `Blob.prototype` / `AbortSignal.prototype`, but under **private Symbol
 keys**, so native user objects inherit the methods while nothing observable changes
 on the globals (§5.7). In the modern build it is a no-op (the methods already
 exist). Keep the call: the call site keeps the install alive against tree-shaking
-and ensures it runs before user code.
+and ensures it runs before user code. The worker entries must route through this
+same seam too: compat worker-plugin bundles cannot rely on a raw
+`.throwIfAborted()` member call, and compat worker-script bundles cannot construct
+raw `AbortController` directly. Both worker entries share one internal seam module
+(`src/worker-common.ts`) so the build-flag ternary, polyfill bindings, and
+worker-only production error-code strings live in one place.
 
 ---
 
@@ -182,7 +195,50 @@ globalObject: "typeof self !== 'undefined' ? self : this"
 
 CR86FF68 and modern engines have `globalThis`, so their wrappers may keep it.
 
-### 4.4 Property mangling allow-list
+### 4.4 Worker plugin and worker script outputs
+
+The worker backend ships as a separate opt-in entry point so the default
+`web-jszipp` import never creates workers and never pins worker-only code in
+ordinary bundles.
+
+Each build family has two distinct artifacts:
+
+| Build family | Page-side plugin | Worker-side script |
+| ------------ | ---------------- | ------------------ |
+| Modern | `dist/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/jszipp.worker.mjs` module worker and `dist/jszipp.worker.umd.js` classic worker |
+| CR61FF58 | `dist/cr61ff58/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr61ff58/jszipp.worker.umd.js` classic worker |
+| CR86FF68 | `dist/cr86ff68/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr86ff68/jszipp.worker.umd.js` classic worker |
+
+The package export map mirrors those files:
+
+```ts
+import { createWorkerBackend } from "web-jszipp/worker-plugin";
+import { createWorkerBackend as createCR61WorkerBackend } from "web-jszipp/browser-legacy/cr61ff58/worker-plugin";
+import { createWorkerBackend as createCR86WorkerBackend } from "web-jszipp/browser-legacy/cr86ff68/worker-plugin";
+```
+
+`web-jszipp/worker-script` is the single modern worker-script subpath: the
+`import` condition resolves to the modern module worker file, while the default
+condition resolves to the modern classic worker file. The legacy
+`browser-legacy/*/worker-script` subpaths resolve to classic UMD worker files.
+Browsers do not import those subpaths directly inside `new Worker()`; bundlers
+or package-copy steps use the subpaths to locate the static file, then the app
+passes the final URL to the worker factory.
+
+Rules that are easy to break:
+
+- The worker script imports `src/index.ts` internals and must receive the same
+  `CR61FF58` / `CR86FF68` flags as its matching main build.
+- The worker script builds disable `__JSZIPP_NAMESPACE__` so the default
+  namespace object does not pin unused reader/writer exports.
+- Compat worker scripts are classic workers. Do not document or emit
+  `{ type: "module" }` for CR61FF58 or CR86FF68 worker construction.
+- The CR61FF58 worker UMD wrapper must use the `self`/`this` global fallback, not
+  bare `globalThis`, for the same reason as the page-side UMD files.
+- The plugin takes a caller-provided `Worker` or factory. It must not create blob
+  URL workers internally, because extension CSP often forbids them.
+
+### 4.5 Property mangling allow-list
 
 `mangle.props.regex` renames only internal fields that are never part of the
 public surface. Option keys that arrive on user objects (`outputAs`, `mimeType`,
@@ -248,7 +304,7 @@ Two design rules are load-bearing and must not be broken:
   the library always drains eagerly. The readable queue is head-indexed (O(1)
   dequeue, consumed slots freed, backing array released on full drain) so a large
   archive does not turn draining into O(n²). For the shape and rationale of the
-  stream surface itself, see `streaming.md`.
+  stream surface itself, see `streaming-model.md`.
 
 ### 5.3 `DecompressionStream("deflate-raw")` → the pure-JS inflater
 
@@ -261,7 +317,7 @@ Chrome 86 cannot help, because a ponyfill `ReadableStream` cannot `pipeThrough` 
 
 The inflater (`inflateRawDynamic`) is LUT-based with module-scoped scratch tables
 reused across calls and the fixed Huffman tree built once. It is correctness-
-checked against Node's `zlib` (see `testing.md` / `inflate_test.ts`). The modern
+checked against Node's `zlib` (see `testing-requirements.md` / `inflate_test.ts`). The modern
 build tree-shakes this entire subsystem out.
 
 ### 5.4 `AbortController` / `AbortSignal` and `throwIfAborted`
@@ -440,7 +496,7 @@ library; it must never be passed to a native stream-consuming Web API.
 ## 6. Feature → minimum native browser reference
 
 Approximate "first stable version" for every feature this library touches. Use it
-to reason about which build covers what; `CONTRACT.md` owns the contractual
+to reason about which build covers what; `api-contract.md` owns the contractual
 promises.
 
 | Feature | Chrome | Firefox | Needed natively by | How legacy builds cover it |
@@ -481,7 +537,9 @@ not the transpiled legacy bundle.
    modern build can collapse it to native and the legacy builds can substitute.
    This includes methods on existing classes: read user Blobs via
    `blob[arrayBuffer_]()` and check signals via `signal?.[throwIfAborted_]()`, never
-   `blob.arrayBuffer()` / `sig.throwIfAborted()` directly (§5.7).
+   `blob.arrayBuffer()` / `sig.throwIfAborted()` directly (§5.7). The worker script
+   follows the same rule for constructors: use `AbortController_`, never raw
+   `AbortController`, when creating its placeholder signal.
 3. **No bare `globalThis` in legacy-bundled code.** Use `glob` (§5.1). The only
    permitted bare reference is inside a `typeof globalThis !== "undefined"` guard.
 4. **No bare `[Symbol.asyncIterator]` in legacy-bundled code.** Use the
@@ -501,9 +559,14 @@ not the transpiled legacy bundle.
    the native string name — so the observable global surface (and other libraries'
    feature detection) is unchanged. `installPolyfills()` runs once at load; keep the
    call so it is not tree-shaken (§5.7).
-9. **Preserve the public API and error categories across all builds.** Adding a
+9. **Keep worker-entry internals shared.** `src/worker-plugin.ts` and
+   `src/worker-script.ts` must import their build-flag selection, polyfill seam,
+   and worker-only production error-code strings from the same internal helper
+   (`src/worker-common.ts`), not redefine parallel copies. This avoids the worker
+   entries drifting in compat behavior or compressed error vocabulary.
+10. **Preserve the public API and error categories across all builds.** Adding a
    compat measure must never remove or alter a feature, an exported name, or an
-   exception class / DOMException name (`CONTRACT.md`).
+   exception class / DOMException name (`api-contract.md`).
 
 ---
 
@@ -516,7 +579,7 @@ output.
 1. **Typecheck:** `tsc --noEmit` must stay clean (strict mode).
 2. **Behavior:** run the suite (`vitest run`). The DEFLATE inflater and stream
    pipeline are checked against Node `zlib` in `inflate_test.ts`; see
-   `testing.md`.
+   `testing-requirements.md`.
 3. **Transpiled-syntax audit (the step people forget).** Transpile the changed
    source at the legacy target and confirm no un-parseable syntax survives:
 
@@ -560,8 +623,13 @@ output.
    CR86FF68, where a native `AbortSignal` can exist — an already-aborted signal
    that must reject via the `throwIfAborted_` seam. A green run is honest proof
    that the bundled polyfills **actually wire up and run** — the exact class of
-   regression the native-seam suite cannot catch. See `testing.md` → *Compat smoke
+   regression the native-seam suite cannot catch. See `testing-requirements.md` → *Compat smoke
    test*.
+
+   The package-export test also checks that worker plugin and worker script files
+   exist for the modern, CR61FF58, and CR86FF68 build families. That proves the
+   artifacts are emitted and exported; it does not prove a real browser can load
+   every worker script.
 
    What a green run does **not** prove (do not over-read it):
    - **Syntax** the floor cannot parse — Node's V8 parses `async function*`, `?.`,
@@ -591,7 +659,7 @@ output.
      Chromium through the `demo/compress.html` demo and validates the archive the
      browser produces with an independent reader. This automates the real-engine
      round-trip for a modern browser. See
-     [testing.md → End-to-end browser smoke test](testing.md#end-to-end-browser-smoke-test-real-engine).
+     [testing-requirements.md → End-to-end browser smoke test](testing-requirements.md#end-to-end-browser-smoke-test-real-engine).
      Because it runs a modern Chromium and the ESM build, it does **not** cover the
      legacy floors or the UMD wrapper.
    - **Legacy floor, manual.** When feasible, load the built **UMD** in an actual
@@ -599,6 +667,13 @@ output.
      the only check that exercises the UMD wrapper's `globalObject` choice (§4.3)
      and the `FileReader` Blob path against a genuine *old* engine; Playwright's
      bundled Chromium cannot stand in for those floors.
+   - **Worker demo, manual or browser-automated.** Load
+     `demo/worker-compression-demo.html` after `pnpm run build` to exercise the
+     static worker-script path. Test at least one modern module-worker path
+     (`dist/jszipp.worker.mjs`) and, when the relevant browsers are available,
+     the compat classic-worker paths (`dist/cr61ff58/jszipp.worker.umd.js` and
+     `dist/cr86ff68/jszipp.worker.umd.js`). A successful run proves the
+     page-side plugin and worker-side script are matched correctly.
 
 ---
 
@@ -613,11 +688,14 @@ output.
 3. Add a `DefinePlugin` flag and a thin `polyfill-<TARGET>.ts` entry that
    re-exports `polyfill-compat.ts` and supplies only the deltas unique to the
    pair (as `polyfill-CR61FF58.ts` supplies its AbortController poly).
-4. Wire the flag into the `index.ts` selection ternary.
-5. Set a Chrome-/Firefox-safe `output.globalObject` for that build's UMD outputs
+4. Wire the flag into the `index.ts` selection ternary and the worker-script
+   build for that target.
+5. Add matching `worker-plugin` and worker-script outputs, plus package export
+   subpaths if the target is public.
+6. Set a Chrome-/Firefox-safe `output.globalObject` for that build's UMD outputs
    if the floor lacks `globalThis` (§4.3).
-6. Run §8 against the new target, including the transpiled-syntax audit.
-7. Update §2, §6, `README.md` (subpaths / CDN tags), and `CONTRACT.md` if the
+7. Run §8 against the new target, including the transpiled-syntax audit.
+8. Update §2, §6, `README.md` (subpaths / CDN tags), and `api-contract.md` if the
    supported floor changes.
 
 ---

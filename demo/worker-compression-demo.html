@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="./common.js"></script>
 <style>
   :root{
     --bg:#070a08; --panel:#0c120e; --panel2:#0f1712; --grid:#16241c;
@@ -330,6 +331,8 @@
 
 const github = ["https://jszipp.github.io"].includes(location.origin);
 
+const bucket = getBrowserCapabilityBucket();
+
 const SOURCES = {
   fflate: [
     "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
@@ -359,20 +362,20 @@ const SOURCES = {
     "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js"
   ].filter(Boolean),
   jszippWorkerScriptModule: [
-    !github && "../dist/jszipp.worker.mjs",
+    github ? "../demo/demo-dist/jszipp.worker.mjs" : "../dist/jszipp.worker.mjs",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.mjs",
     "https://unpkg.com/web-jszipp/dist/jszipp.worker.mjs"
   ].filter(Boolean),
   jszippWorkerScriptClassic: [
-    !github && "../dist/jszipp.worker.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.js",
-    "https://unpkg.com/web-jszipp/dist/jszipp.worker.js",
-    !github && "../dist/cr86ff68/jszipp.worker.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker.js",
-    "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker.js",
-    !github && "../dist/cr61ff58/jszipp.worker.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker.js",
-    "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker.js"
+    bucket === "modern" && (github ? "../demo/demo-dist/jszipp.worker.js" : "../dist/jszipp.worker.js"),
+    bucket === "modern" && ("https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.js"),
+    bucket === "modern" && ("https://unpkg.com/web-jszipp/dist/jszipp.worker.js"),
+    bucket === "cr86ff68" && (github ? "../demo/demo-dist/cr86ff68/jszipp.worker.js" : "../dist/cr86ff68/jszipp.worker.js"),
+    bucket === "cr86ff68" && ("https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker.js"),
+    bucket === "cr86ff68" && ("https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker.js"),
+    bucket === "cr61ff58" && (github ? "../demo/demo-dist/cr61ff58/jszipp.worker.js" : "../dist/cr61ff58/jszipp.worker.js"),
+    bucket === "cr61ff58" && ("https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker.js"),
+    bucket === "cr61ff58" && ("https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker.js")
   ].filter(Boolean)
 };
 let JSZippWorkerPlugin = null;

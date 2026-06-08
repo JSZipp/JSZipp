@@ -16,6 +16,15 @@ It also exposes a default `JSZipp` namespace object containing
 `ZipTransformStream`, `ZipWriter`, `readZipStream`, `openZip`, and
 `TimestampMode`.
 
+JSZipp ships that same public API through three build families:
+
+- `web-jszipp` = the default `modern` build for Chrome 80+ / Firefox 113+ class
+  browsers.
+- `web-jszipp/browser-legacy/cr86ff68` = the Chrome 86 / Firefox 68 compat
+  build.
+- `web-jszipp/browser-legacy/cr61ff58` = the Chrome 61 / Firefox 58 compat
+  build.
+
 The optional worker package surface is intentionally separate from the default
 namespace:
 

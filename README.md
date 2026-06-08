@@ -488,7 +488,9 @@ If a worker cannot be constructed, the backend falls back to the normal in-threa
 writer unless `fallback: false` is set. `writeSync()` and `closeSync()` do not
 use the backend and remain local synchronous operations. Aborting one write
 rejects only that write; it does not automatically terminate a shared backend or
-cancel unrelated in-flight writes using the same worker.
+cancel unrelated in-flight writes using the same worker. It also does not stop
+compression already running inside the worker; abort is main-side request
+isolation, not worker CPU cancellation.
 
 If a worker request fails after the worker was created, `fallback: true` still
 tries to continue locally for requests whose source data remains usable in the
@@ -530,7 +532,10 @@ The CR86/FF68 compat build follows the same pattern with
 `vendor/cr86ff68/jszipp.umd.js`,
 `vendor/cr86ff68/jszipp.worker-plugin.umd.js`, and
 `vendor/cr86ff68/jszipp.worker.js`. Do not pass `{ type: "module" }` for
-the compat worker script; it is a classic worker script for older browsers.
+the compat worker script; it is a classic worker script for older browsers. The
+automated end-to-end worker smoke test covers the modern Chromium module-worker
+path; the compat classic-worker paths still require manual verification on their
+actual legacy browsers.
 
 ## Read A ZIP By File Name
 

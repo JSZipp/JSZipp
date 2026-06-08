@@ -281,8 +281,9 @@ packaging, or URL-resolution rules. However, the Blob/File input path in
 control (`<input webkitdirectory>`), which creates `File` / `Blob` objects and
 passes them to the writer in the real browser. The compat floors'
 `Blob.prototype.arrayBuffer` FileReader fallback (when native `Blob.arrayBuffer`
-is absent on CR61FF58 / CR86FF68) and the classic-worker outputs would still need
-to be tested in the actual legacy browsers.
+is absent on CR61FF58 / CR86FF68) and the classic-worker outputs
+(`dist/cr61ff58/jszipp.worker.js` and `dist/cr86ff68/jszipp.worker.js`) would
+still need to be tested in the actual legacy browsers.
 Run it after a build:
 
 ```sh

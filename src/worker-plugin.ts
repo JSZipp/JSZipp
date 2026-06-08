@@ -89,7 +89,8 @@ export interface ZipWorkerBackendOptions {
  * The same backend can be passed to multiple `ZipWriter` instances. Writers do
  * not terminate it automatically; call `terminate()` when the backend is no
  * longer needed. Aborting one write rejects only that write; it does not tear
- * down sibling work sharing the backend.
+ * down sibling work sharing the backend or stop compression already running in
+ * the worker.
  */
 export interface ZipWorkerBackendHandle extends ZipWorkerBackend {
   /** Terminate the current worker instance and reject any in-flight requests. */

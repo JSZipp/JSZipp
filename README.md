@@ -138,7 +138,16 @@ caps, and reject archives that do not meet the profile.
 - Default build target: `modern` = Chrome 80+ / Firefox 113+ class browsers
 - Legacy subpath targets: `browser-legacy/cr86ff68` = Chrome 86 / Firefox 68,
   `browser-legacy/cr61ff58` = Chrome 61 / Firefox 58
-- Node.js can run the tests, but the library is designed for browser APIs
+- Compatible with Node 20+ for Web-API-style usage, but not currently marketed
+  as a Node-first ZIP library.
+
+### Node.js
+
+JSZipp can be used in Node.js 20+ through its ESM or CommonJS builds, as long as
+you use Web-compatible input/output types such as Uint8Array, ArrayBuffer,
+Blob, Response, and Web Streams. The library is still primarily designed for
+browser applications, so Node filesystem streams may need to be converted before
+use.
 
 ## Error Messages
 

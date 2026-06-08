@@ -103,6 +103,7 @@ type WorkerResponse = {
   prepared?: ZipPreparedEntry;
   error?: { name: string; message: string };
 };
+type AbortSignalWithListeners = AbortSignal & Pick<EventTarget, "addEventListener" | "removeEventListener">;
 
 const workerUnsupported = (): DOMException =>
   new DOMException(DEV ? "JSZipp worker backend cannot prepare this entry" : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
@@ -124,6 +125,13 @@ const isReadableStreamInput = (input: ZipInputEntry["data"]): boolean =>
   typeof input === "object" && input !== null && "getReader" in input;
 
 const textEncoder = new TextEncoder();
+const canListenForAbort = (signal: AbortSignal): signal is AbortSignalWithListeners =>
+  typeof (signal as { addEventListener?: unknown }).addEventListener === "function"
+  && typeof (signal as { removeEventListener?: unknown }).removeEventListener === "function";
+
+const removeAbortListener = (signal: AbortSignal, abort: () => void): void => {
+  if (canListenForAbort(signal)) signal.removeEventListener("abort", abort);
+};
 
 const inputSize = (input: ZipInputEntry["data"]): number | undefined => {
   if (typeof input === "string") return textEncoder.encode(input).byteLength;
@@ -191,7 +199,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     return new Promise<ZipPreparedEntry | undefined>((resolve, reject) => {
       const cleanup = (): void => {
         const pending = this.pending.get(id);
-        if (pending) pending.signal.removeEventListener("abort", pending.abort);
+        if (pending) removeAbortListener(pending.signal, pending.abort);
         this.pending.delete(id);
       };
       const abort = (): void => {
@@ -210,7 +218,11 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
         },
         abort
       });
-      options.signal.addEventListener("abort", abort, { once: true });
+      if (canListenForAbort(options.signal)) options.signal.addEventListener("abort", abort, { once: true });
+      if (options.signal.aborted) {
+        abort();
+        return;
+      }
 
       try {
         worker.postMessage({ id, input: requestInput, options: serializableOptions(options), pathInfo }, transfer);
@@ -259,7 +271,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     const pending = [...this.pending.values()];
     this.pending.clear();
     for (const request of pending) {
-      request.signal.removeEventListener("abort", request.abort);
+      removeAbortListener(request.signal, request.abort);
       request.reject(error);
     }
   }

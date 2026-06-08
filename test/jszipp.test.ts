@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
 import JSZipp, { __privatePrepareEntryForWorker, ZipTransformStream, ZipWriter, openZip, readZipStream, TimestampMode, type ZipReadOptions, type ZipStreamEntry } from "../src/index";
+import { throwIfAborted_ } from "../src/worker-common";
 import { createWorkerBackend } from "../src/worker-plugin";
 
 const encoder = new TextEncoder();
@@ -135,6 +136,15 @@ class PathChangingZipWorker {
         if (!this.terminated) this.onmessage?.({ data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
       }
     })();
+  }
+}
+
+class PollOnlyAbortSignal {
+  aborted = false;
+  reason: unknown = undefined;
+
+  [throwIfAborted_](): void {
+    if (this.aborted) throw this.reason ?? new DOMException("signal is aborted without reason", "AbortError");
   }
 }
 const writeU16 = (view: DataView, offset: number, value: number): void => view.setUint16(offset, value, true);
@@ -888,6 +898,26 @@ describe("ZipWriter", () => {
 
       const secondArchive = await second.close();
       expect(await (await openZip(secondArchive)).get("second.txt")?.text()).toBe("b".repeat(5000));
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("worker backend accepts poll-only signals without addEventListener", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = FakeZipWorker;
+    FakeZipWorker.calls = 0;
+    const backend = createWorkerBackend({ workerSource: () => new FakeZipWorker() as unknown as Worker, fallback: false, minSize: 0 });
+    try {
+      const signal = new PollOnlyAbortSignal() as unknown as AbortSignal;
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend, signal });
+      await writer.add({ path: "poll-only.txt", data: "compat".repeat(1000) });
+      const archive = await writer.close();
+
+      expect(await (await openZip(archive)).get("poll-only.txt")?.text()).toBe("compat".repeat(1000));
+      expect(FakeZipWorker.calls).toBe(1);
     } finally {
       backend.terminate();
       if (originalWorker === undefined) delete (globalThis as any).Worker;

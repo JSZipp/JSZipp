@@ -324,9 +324,10 @@ build tree-shakes this entire subsystem out.
 
 - **Base class.** `AbortController` shipped in Chrome 66 / Firefox 57. **Chrome 61
   has no base class at all**, so `polyfill-CR61FF58.ts` supplies a minimal
-  poll-based `AbortController`/`AbortSignal` (no `EventTarget`; the library only
-  does `new AbortController().signal` and polls `signal.throwIfAborted()`). Where
-  the platform class exists (Firefox 58) it is used unchanged, selected via
+  `AbortController`/`AbortSignal` with `aborted`, `reason`,
+  `signal.throwIfAborted()`, and the small `addEventListener` /
+  `removeEventListener` subset the worker backend uses for `"abort"`. Where the
+  platform class exists (Firefox 58) it is used unchanged, selected via
   `glob.AbortController ?? Poly`. CR86FF68 uses the native class directly.
 - **`throwIfAborted`.** The method shipped in Chrome 100 / Firefox 97, so **both
   legacy pairs lack it** even when they have the base class. It is supplied through
@@ -450,9 +451,10 @@ way to see it is `Object.getOwnPropertySymbols`. The polyfill is present where t
 library needs it and invisible everywhere else.
 
 **Chrome 61 / `AbortSignal`.** Chrome 61 has no `AbortSignal` base class to attach
-to, so `polyfill-CR61FF58.ts`'s poll-based signal defines `[throwIfAborted_]` on its
-own class (under the same imported Symbol). On Firefox 58 that build uses the native
-`AbortController`, and `installPolyfills` attaches the Symbol method to the native
+to, so `polyfill-CR61FF58.ts`'s signal defines `[throwIfAborted_]` on its own class
+(under the same imported Symbol) and carries the small abort-listener subset the
+worker backend uses. On Firefox 58 that build uses the native `AbortController`,
+and `installPolyfills` attaches the Symbol method to the native
 `AbortSignal.prototype` — so caller-supplied native signals work there too.
 
 **Call sites.** `index.ts` uses `source[arrayBuffer_]()` / `input[arrayBuffer_]()`

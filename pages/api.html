@@ -185,20 +185,20 @@
         <!-- ============================================================ -->
         <h2 id="import">Importing</h2>
         <p>
-          Every runtime value is a named export. A default <code>JSZipp</code> namespace bundles the
-          runtime API for callers who prefer one object.
+          Use named imports. They enable tree-shaking and help bundlers drop unused code.
         </p>
-        <pre><code>import JSZipp, {
+        <pre><code>import {
   ZipWriter,
   ZipTransformStream,
   openZip,
   readZipStream,
   TimestampMode
-} from "web-jszipp";
-
-// Named imports and the namespace are equivalent:
-const a = new ZipWriter();
-const b = new JSZipp.ZipWriter();</code></pre>
+} from "web-jszipp";</code></pre>
+        <p>
+          A default <code>JSZipp</code> namespace is also available for codebases that prefer a single object:
+        </p>
+        <pre><code>import JSZipp from "web-jszipp";
+const writer = new JSZipp.ZipWriter();</code></pre>
         <p>
           The worker plugin is a separate subpath so ordinary imports do not include worker-only
           code.
@@ -1075,8 +1075,9 @@ const writer = new ZipWriter({
         <!-- ============================================================ -->
         <h2 id="namespace">Default namespace</h2>
         <p>
-          The default export is a <code>JSZipp</code> object bundling the runtime API values, for
-          callers who prefer a single namespace over named imports.
+          A default export bundles the runtime API values for codebases that prefer a single object.
+          <strong>Named imports are the recommended approach</strong> because they enable tree-shaking and
+          reduce bundle size when you use only part of the API.
         </p>
         <pre><code>import JSZipp from "web-jszipp";
 

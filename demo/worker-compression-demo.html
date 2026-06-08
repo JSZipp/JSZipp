@@ -328,50 +328,52 @@
    CDN loading (with fallback). Globals: window.fflate, window.JSZipp
    ========================================================================= */
 
+const github = ["https://jszipp.github.io"].includes(location.origin);
+
 const SOURCES = {
   fflate: [
     "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
     "https://unpkg.com/fflate@0.8.2/umd/index.js"
   ],
   jszipp: [
-    "../dist/jszipp.umd.js",
+    !github && "../dist/jszipp.umd.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
     "https://unpkg.com/web-jszipp/dist/jszipp.umd.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
     "https://unpkg.com/web-jszipp/dist/jszipp.umd.js"
-  ],
+  ].filter(Boolean),
   jszippWorkerPluginModule: [
-    "../dist/jszipp.worker-plugin.mjs",
+    !github && "../dist/jszipp.worker-plugin.mjs",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.mjs",
     "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.mjs"
-  ],
+  ].filter(Boolean),
   jszippWorkerPluginClassic: [
-    "../dist/jszipp.worker-plugin.umd.js",
+    !github && "../dist/jszipp.worker-plugin.umd.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.umd.js",
     "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.umd.js",
-    "../dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    !github && "../dist/cr86ff68/jszipp.worker-plugin.umd.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
     "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
-    "../dist/cr61ff58/jszipp.worker-plugin.umd.js",
+    !github && "../dist/cr61ff58/jszipp.worker-plugin.umd.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js",
     "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js"
-  ],
+  ].filter(Boolean),
   jszippWorkerScriptModule: [
-    "../dist/jszipp.worker.mjs",
+    !github && "../dist/jszipp.worker.mjs",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.mjs",
     "https://unpkg.com/web-jszipp/dist/jszipp.worker.mjs"
-  ],
+  ].filter(Boolean),
   jszippWorkerScriptClassic: [
-    "../dist/jszipp.worker.js",
+    !github && "../dist/jszipp.worker.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker.js",
     "https://unpkg.com/web-jszipp/dist/jszipp.worker.js",
-    "../dist/cr86ff68/jszipp.worker.js",
+    !github && "../dist/cr86ff68/jszipp.worker.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker.js",
     "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker.js",
-    "../dist/cr61ff58/jszipp.worker.js",
+    !github && "../dist/cr61ff58/jszipp.worker.js",
     "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker.js",
     "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker.js"
-  ]
+  ].filter(Boolean)
 };
 let JSZippWorkerPlugin = null;
 let JSZippModuleWorkerScriptUrl = null;

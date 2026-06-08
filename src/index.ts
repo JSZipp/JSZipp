@@ -58,6 +58,36 @@ const DecompressionStream_ = polyfill_.DecompressionStream_;
 
 const { max, min, ceil, imul } = Math;
 const { isInteger, isSafeInteger, isFinite, MAX_SAFE_INTEGER } = Number;
+/**
+ * Largest ZIP64 64-bit value JSZipp accepts when decoding ZIP64 metadata.
+ *
+ * ZIP64 fields are unsigned 64-bit integers, but this implementation stores parsed
+ * offsets, sizes, and counts as JavaScript `number`s. `Number.MAX_SAFE_INTEGER` is
+ * exactly representable, but a raw ZIP64 value at that boundary is not generally a
+ * usable ZIP byte position: the parser immediately adds fixed ZIP structure sizes
+ * to many of these values before validating or slicing.
+ *
+ * The strictest fixed-size follow-up read is the ZIP64 End Of Central Directory
+ * record lookup:
+ *
+ *   zip64Offset = readU64(...)
+ *   ensureRange(length, zip64Offset, 56, "ZIP64 EOCD record")
+ *
+ * Therefore the largest offset that can still safely add the required 56-byte
+ * ZIP64 EOCD record length without crossing JavaScript's safe integer boundary is:
+ *
+ *   Number.MAX_SAFE_INTEGER - 56
+ *
+ * Using this single conservative cap for all decoded ZIP64 values keeps later
+ * arithmetic such as `offset + size`, `centralOffset + centralSize`, and
+ * `start + compressedSize` within the safe-integer range before normal ZIP bounds
+ * checks reject values that do not fit inside the actual input archive.
+ *
+ * This is an implementation safety limit, not a ZIP format limit. The ZIP spec can
+ * encode larger 64-bit values, but JSZipp rejects them rather than operating on
+ * rounded byte offsets or sizes.
+ */
+const MAX_ZIP64_U64 = MAX_SAFE_INTEGER - 56;
 
 // Per-entry metadata. On write, every field is optional input supplied via
 // `ZipInputEntry.meta`; on read, reader entries expose the parsed values.
@@ -2801,7 +2831,7 @@ const readU64 = (view: DataView_, offset: number, label: string): number => {
   const low = view.getUint32(offset, true);
   const high = view.getUint32(offset + 4, true);
   const value = high * 0x100000000 + low;
-  if (value > MAX_SAFE_INTEGER) readU64Fail(label);
+  if (value > MAX_ZIP64_U64) readU64Fail(label);
   return value;
 };
 const readU64Fail =

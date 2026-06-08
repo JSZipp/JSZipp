@@ -332,11 +332,12 @@ await writer.add({ path: "huge.log", data: log, level: 9 });        // override 
               Central Directory header additionally carries the local-header offset (24 data bytes).
             </p>
             <p>
-              JSZipp supports ZIP64 archives up to JavaScript's safe integer range: roughly
-              <strong>9 petabytes</strong> for any single ZIP64 size, offset, or directory-size
-              value. ZIP files can theoretically store larger 64-bit values, but JavaScript cannot
-              represent those byte positions exactly as normal numbers. JSZipp rejects such archives
-              instead of reading from a rounded offset or reporting an unsafe size.
+              JSZipp supports ZIP64 values that fit safely in JavaScript numbers and inside the
+              actual archive being read. In practice, a ZIP64 size or offset must be below
+              JavaScript's safe integer range, about <strong>9 PB</strong>, and it must also fit
+              within the input ZIP byte length. For example, a local-header offset must still
+              leave room for the local header and payload bytes. Archives with larger ZIP64
+              values are rejected instead of being parsed with rounded or unsafe byte positions.
             </p>
           </div>
         </details>

@@ -751,6 +751,127 @@ const buildDataDescriptorZip = (entries: DescriptorZipEntry[], archiveComment = 
   return concatBytes([...localChunks, centralDirectory, eocd]);
 };
 
+const buildZip64LocalOffsetOnlyArchive = (): TestBytes => {
+  // One stored entry whose central-directory record uses 0xffffffff for the
+  // local-header offset, supplying the real value (0) in a ZIP64 extra that
+  // contains only the localOffset field (no saturated size fields present).
+  // Validates the conditional ZIP64-extra shift() pattern in readCentralEntry.
+  const pathBytes = encode("a.txt");
+  const data = encode("hello");
+  const crc = nodeCrc32(data);
+
+  const local = new Uint8Array(30 + pathBytes.length) as TestBytes;
+  const localView = new DataView(local.buffer);
+  writeU32(localView, 0, 0x04034b50);
+  writeU16(localView, 4, 20);
+  writeU16(localView, 6, 0x0800);
+  writeU16(localView, 8, 0);
+  writeU32(localView, 14, crc);
+  writeU32(localView, 18, data.length);
+  writeU32(localView, 22, data.length);
+  writeU16(localView, 26, pathBytes.length);
+  writeU16(localView, 28, 0);
+  local.set(pathBytes, 30);
+
+  const centralOffset = local.length + data.length;
+
+  // ZIP64 extra: only the 8-byte localOffset field (no size fields)
+  const zip64Extra = new Uint8Array(12) as TestBytes;
+  const z64View = new DataView(zip64Extra.buffer);
+  writeU16(z64View, 0, 0x0001);
+  writeU16(z64View, 2, 8);
+  writeU32(z64View, 4, 0); // real localOffset = 0, low 32 bits
+  writeU32(z64View, 8, 0); // high 32 bits
+
+  const central = new Uint8Array(46 + pathBytes.length + zip64Extra.length) as TestBytes;
+  const centralView = new DataView(central.buffer);
+  writeU32(centralView, 0, 0x02014b50);
+  writeU16(centralView, 4, 45);
+  writeU16(centralView, 6, 45);
+  writeU16(centralView, 8, 0x0800);
+  writeU16(centralView, 10, 0);
+  writeU32(centralView, 16, crc);
+  writeU32(centralView, 20, data.length); // NOT saturated
+  writeU32(centralView, 24, data.length); // NOT saturated
+  writeU16(centralView, 28, pathBytes.length);
+  writeU16(centralView, 30, zip64Extra.length);
+  writeU32(centralView, 42, 0xffffffff); // localOffset sentinel
+  central.set(pathBytes, 46);
+  central.set(zip64Extra, 46 + pathBytes.length);
+
+  const eocd = new Uint8Array(22) as TestBytes;
+  const eocdView = new DataView(eocd.buffer);
+  writeU32(eocdView, 0, 0x06054b50);
+  writeU16(eocdView, 8, 1);
+  writeU16(eocdView, 10, 1);
+  writeU32(eocdView, 12, central.length);
+  writeU32(eocdView, 16, centralOffset);
+
+  return concatBytes([local, data, central, eocd]);
+};
+
+const buildArchiveWithEmptyZip64Extra = (entries: { path: string; data: string }[]): TestBytes => {
+  // Identical layout to buildDuplicateStoredArchive except that each central-
+  // directory record carries a 4-byte empty ZIP64 extra (id=0x0001, size=0x0000).
+  // Such archives are produced by some versions of Apache Ant and Commons Compress.
+  const localChunks: Uint8Array[] = [];
+  const centralItems: { path: TestBytes; data: TestBytes; crc32: number; localOffset: number }[] = [];
+
+  for (const entry of entries) {
+    const path = encode(entry.path);
+    const data = encode(entry.data);
+    const localOffset = localChunks.reduce((sum, c) => sum + c.length, 0);
+    const crc = nodeCrc32(data);
+    const local = new Uint8Array(30 + path.length) as TestBytes;
+    const view = new DataView(local.buffer);
+
+    writeU32(view, 0, 0x04034b50);
+    writeU16(view, 4, 20);
+    writeU16(view, 8, 0);
+    writeU32(view, 14, crc);
+    writeU32(view, 18, data.length);
+    writeU32(view, 22, data.length);
+    writeU16(view, 26, path.length);
+    local.set(path, 30);
+
+    localChunks.push(local, data);
+    centralItems.push({ path, data, crc32: crc, localOffset });
+  }
+
+  const centralOffset = localChunks.reduce((sum, c) => sum + c.length, 0);
+  const zip64EmptyExtra = byteArray([0x01, 0x00, 0x00, 0x00]); // id=0x0001, size=0
+
+  const centralChunks = centralItems.map((item) => {
+    const header = new Uint8Array(46 + item.path.length + zip64EmptyExtra.length) as TestBytes;
+    const view = new DataView(header.buffer);
+
+    writeU32(view, 0, 0x02014b50);
+    writeU16(view, 4, 20);
+    writeU16(view, 6, 20);
+    writeU16(view, 10, 0);
+    writeU32(view, 16, item.crc32);
+    writeU32(view, 20, item.data.length);
+    writeU32(view, 24, item.data.length);
+    writeU16(view, 28, item.path.length);
+    writeU16(view, 30, zip64EmptyExtra.length);
+    writeU32(view, 42, item.localOffset);
+    header.set(item.path, 46);
+    header.set(zip64EmptyExtra, 46 + item.path.length);
+    return header;
+  });
+
+  const centralDir = concatBytes(centralChunks);
+  const eocd = new Uint8Array(22) as TestBytes;
+  const eocdView = new DataView(eocd.buffer);
+  writeU32(eocdView, 0, 0x06054b50);
+  writeU16(eocdView, 8, entries.length);
+  writeU16(eocdView, 10, entries.length);
+  writeU32(eocdView, 12, centralDir.length);
+  writeU32(eocdView, 16, centralOffset);
+
+  return concatBytes([...localChunks, centralDir, eocd]);
+};
+
 describe("ZipWriter", () => {
   it.concurrent("exposes JSZipp as the default namespace", () => {
     expect(JSZipp.ZipWriter).toBe(ZipWriter);
@@ -2397,7 +2518,7 @@ describe("openZip", () => {
   });
 
   describe("central directory consistency", () => {
-    it("reads a standard ZIP archive with exactly 65535 entries without requiring ZIP64", async () => {
+    it.concurrent("reads a standard ZIP archive with exactly 65535 entries without requiring ZIP64", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
 
       for (let index = 0; index < 0xffff; index++) writer.writeSync({ path: `f/${index.toString(16).padStart(4, "0")}`, data: "" });
@@ -2411,6 +2532,34 @@ describe("openZip", () => {
       expect(await reader.get("f/0000")?.text()).toBe("");
       expect(await reader.get("f/fffe")?.text()).toBe("");
     }, 30000);
+
+    it.concurrent("round-trips a ZIP64 archive with exactly 65536 entries (entry count overflows the 16-bit EOCD field)", async () => {
+      // 65536 = 0x10000 entries exceeds the 0xffff UINT16 limit, so the writer
+      // must use ZIP64 EOCD even though no individual entry size is large.
+      const writer = new ZipWriter({ level: 0, zip64: "auto", outputAs: "uint8array" });
+      for (let index = 0; index < 0x10000; index++) writer.writeSync({ path: `f/${index.toString(16).padStart(4, "0")}`, data: "" });
+      const archive = writer.closeSync() as TestBytes;
+
+      expect(hasSignature(archive, 0x06064b50)).toBe(true);
+      expect(hasSignature(archive, 0x07064b50)).toBe(true);
+
+      const reader = await openZip(archive);
+      expect(reader.entries).toHaveLength(0x10000);
+      expect(await reader.get("f/0000")?.text()).toBe("");
+      expect(await reader.get("f/ffff")?.text()).toBe("");
+    }, 30000);
+
+    it.concurrent("selects the real EOCD when the archive comment begins with an EOCD-signature pattern", async () => {
+      // A 22-byte comment whose first four bytes match the EOCD signature creates a
+      // spurious candidate at EOF-22; findEocd must pick the real EOCD via content
+      // coherence instead.
+      const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "off", comment: "PK\x05\x06" + "\x00".repeat(18) });
+      await writer.add({ path: "a.txt", data: "hello" });
+      const archive = await writer.close();
+      const reader = await openZip(archive);
+      expect(reader.entries).toHaveLength(1);
+      expect(await reader.get("a.txt")?.text()).toBe("hello");
+    });
 
     it.concurrent("rejects an EOCD entry count that overstates the directory", async () => {
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
@@ -2888,6 +3037,60 @@ describe("ZIP64 parse errors", () => {
     const reader = await openZip(bytes);
     expect(await reader.get("a.txt")?.text()).toBe("hello");
   });
+
+  it.concurrent("rejects a saturated 32-bit compressed size with no ZIP64 extra when the local header uses a data descriptor", async () => {
+    // Companion to the uncompressed-size test above: when bit 3 (data descriptor)
+    // is set, local sizes are zero and there is no fallback path.
+    const bytes = buildDataDescriptorZip([{ path: "a.txt", data: encode("hello"), method: 0 }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 compressed size is missing/i);
+  });
+
+  it.concurrent("rejects a saturated 32-bit uncompressed size when the local header also reports 0xffffffff and no data descriptor is used", async () => {
+    // Both central-dir and local-header sizes are saturated with no ZIP64 extra
+    // and bit 3 clear: there is no recoverable source for the real size.
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
+    view.setUint32(localHeaderOffset(bytes) + 22, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 uncompressed size is missing/i);
+  });
+
+  it.concurrent("rejects a saturated 32-bit compressed size when the local header also reports 0xffffffff and no data descriptor is used", async () => {
+    // Same as above but for the compressed size field.
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+    view.setUint32(localHeaderOffset(bytes) + 18, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 compressed size is missing/i);
+  });
+
+  it.concurrent("accepts a ZIP64 archive where the EOCD locator's total-disks field is 0 instead of 1 (Python-compatible)", async () => {
+    // Python < 3.12 wrote 0 here instead of the correct 1 (cpython bpo-22102).
+    // JSZipp does not read the total-disks field, so such archives must open fine.
+    const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
+    await writer.add({ path: "a.txt", data: "hello" });
+    const archive = byteArray(await writer.close());
+    new DataView(archive.buffer, archive.byteOffset, archive.byteLength).setUint32(findSignature(archive, 0x07064b50) + 16, 0, true);
+    const reader = await openZip(archive);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it.concurrent("accepts a central-directory ZIP64 extra field with a zero-byte body when no sizes are saturated (Ant/Commons Compress compatible)", async () => {
+    // Apache Ant and older Commons Compress write id=0x0001, size=0 even when no
+    // fields are saturated. parseZip64Extra returns [] and no shift() is called.
+    const bytes = buildArchiveWithEmptyZip64Extra([{ path: "a.txt", data: "hello" }]);
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it.concurrent("reads a central-directory entry where only the local-header offset field is carried in the ZIP64 extra", async () => {
+    // Saturated localOffset (0xffffffff) in the central directory with ZIP64 extra
+    // containing only [realOffset]. The size fields are not saturated and are read
+    // from the 32-bit central-directory slots without consuming ZIP64 extra values.
+    const reader = await openZip(buildZip64LocalOffsetOnlyArchive());
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
 });
 
 describe("size caps", () => {
@@ -2915,6 +3118,13 @@ describe("size caps", () => {
 });
 
 describe("reader misc branches", () => {
+  it.concurrent("reads an empty ZIP archive with zero entries", async () => {
+    const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "off" });
+    const archive = writer.closeSync() as TestBytes;
+    const reader = await openZip(archive);
+    expect(reader.entries).toHaveLength(0);
+  });
+
   it.concurrent("throws immediately for an already-aborted signal", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     const controller = new AbortController();

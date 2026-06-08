@@ -2804,7 +2804,11 @@ const readU64 = (view: DataView_, offset: number, label: string): number => {
   if (value > Number.MAX_SAFE_INTEGER) readU64Fail(label);
   return value;
 };
-const readU64Fail = (label: string): never => throwError(DEV ? `${label} exceeds JavaScript safe integer range` : E_ZIP64);
+const readU64Fail =
+  DEV
+    ? (label: string): never => throwError(`${label} exceeds JavaScript safe integer range`)
+    : (): never => throwError(E_ZIP64);
+
 
 const writeU16 = (view: DataView_, offset: number, value: number): void => {
   view.setUint16(offset, value, true);
@@ -2825,6 +2829,9 @@ const requiredZip64 = (value: number | undefined, label: string): number => {
   if (value === undefined) requiredZip64Fail(label);
   return value as number;
 };
-const requiredZip64Fail = (label: string): never => throwError(DEV ? `${label} is missing` : E_ZIP64);
+const requiredZip64Fail =
+  DEV
+    ? (label: string): never => throwError(`${label} is missing`)
+    : (): never => throwError(E_ZIP64);
 
 const CP437 = [..."ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ "];

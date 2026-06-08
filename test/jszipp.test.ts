@@ -824,6 +824,53 @@ describe("ZipWriter", () => {
     }
   });
 
+  it("instance-backed worker backend falls back locally after terminate()", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = FakeZipWorker;
+    FakeZipWorker.calls = 0;
+    const backend = createWorkerBackend({ workerSource: new FakeZipWorker() as unknown as Worker, minSize: 0 });
+    try {
+      const first = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await first.add({ path: "before.txt", data: "before".repeat(1000) });
+      expect(await (await openZip(await first.close())).get("before.txt")?.text()).toBe("before".repeat(1000));
+      expect(FakeZipWorker.calls).toBe(1);
+
+      backend.terminate();
+
+      const second = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await second.add({ path: "after.txt", data: "after".repeat(1000) });
+      expect(await (await openZip(await second.close())).get("after.txt")?.text()).toBe("after".repeat(1000));
+      expect(FakeZipWorker.calls).toBe(1);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("instance-backed worker backend rejects after terminate() when fallback is disabled", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = FakeZipWorker;
+    FakeZipWorker.calls = 0;
+    const backend = createWorkerBackend({ workerSource: new FakeZipWorker() as unknown as Worker, fallback: false, minSize: 0 });
+    try {
+      const first = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await first.add({ path: "before.txt", data: "before".repeat(1000) });
+      expect(await (await openZip(await first.close())).get("before.txt")?.text()).toBe("before".repeat(1000));
+      expect(FakeZipWorker.calls).toBe(1);
+
+      backend.terminate();
+
+      const second = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await expect(second.add({ path: "after.txt", data: "after".repeat(1000) })).rejects.toThrow(DOMException);
+      expect(FakeZipWorker.calls).toBe(1);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
   it("worker backend rejects prepared entries that change the reserved path or entry kind", async () => {
     const originalWorker = (globalThis as any).Worker;
     (globalThis as any).Worker = PathChangingZipWorker;

@@ -477,13 +477,20 @@ Use the factory form in most cases:
 
 Passing a plain `Worker` instance is still valid when your app wants to create
 and own one specific worker up front, but that instance cannot be recreated by
-the backend after it is terminated or fails.
+the backend after it is terminated or fails. After `terminate()` on an
+instance-backed backend, future async writes use the normal in-thread path when
+`fallback` is enabled, or reject with `InvalidStateError` / `E_TERMINATED` when
+`fallback: false` requires worker preparation.
 
 If a worker cannot be constructed, the backend falls back to the normal in-thread
 writer unless `fallback: false` is set. `writeSync()` and `closeSync()` do not
 use the backend and remain local synchronous operations. Aborting one write
 rejects only that write; it does not automatically terminate a shared backend or
 cancel unrelated in-flight writes using the same worker.
+
+Prepared entries returned by a worker backend are trusted by the writer. The
+bundled worker script is intended for that role; custom `ZipWorkerBackend`
+implementations should be treated as trusted code.
 
 For extension pages that use a compat build, load the matching worker plugin and
 classic worker script instead of the modern module pair:

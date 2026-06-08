@@ -457,6 +457,13 @@ try {
               pre-created instance and wants to hand that exact instance to the backend.
             </p>
             <p>
+              After <code>terminate()</code> on an instance-backed backend, that worker cannot be
+              recreated. Future async writes therefore fall back to the normal in-thread path when
+              <code>fallback</code> is enabled, or reject with
+              <code>InvalidStateError</code> / <code>E_TERMINATED</code> when
+              <code>fallback: false</code> requires worker preparation.
+            </p>
+            <p>
               The modern ESM build uses <code>web-jszipp/worker-plugin</code> with
               <code>dist/jszipp.worker.mjs</code> as a module worker. The modern UMD build can
               load <code>dist/jszipp.worker-plugin.umd.js</code> and
@@ -509,6 +516,11 @@ const transferWorker = createWorkerBackend({ workerSource, transfer: "transfer" 
             <p>
               The default is <code>"copy"</code> because detaching caller-owned buffers is easy to
               misuse and can make later application code fail in surprising ways.
+            </p>
+            <p>
+              Prepared entries returned by a worker backend are trusted by the writer. The bundled
+              worker script is intended for that role; custom backends should be treated as trusted
+              code.
             </p>
           </div>
         </details>

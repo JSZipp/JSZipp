@@ -173,11 +173,14 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
   private worker?: Worker;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
+  private readonly instanceBacked: boolean;
+  private instanceTerminated = false;
   private readonly fallback: boolean;
   private readonly transferMode: ZipWorkerTransferMode;
   private readonly minSize: number;
 
   constructor(private readonly factory: ZipWorkerFactory, options: ZipWorkerBackendOptions) {
+    this.instanceBacked = typeof factory !== "function";
     this.fallback = options.fallback ?? true;
     this.transferMode = options.transfer ?? "copy";
     this.minSize = options.minSize ?? 32 * 1024;
@@ -238,6 +241,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     this.rejectPending(terminatedError());
     this.worker?.terminate();
     this.worker = undefined;
+    if (this.instanceBacked) this.instanceTerminated = true;
   }
 
   private unsupported(): Promise<undefined> {
@@ -247,6 +251,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
 
   private getWorker(): Worker | undefined {
     if (this.worker) return this.worker;
+    if (this.instanceTerminated) return undefined;
     try {
       const worker = typeof this.factory === "function" ? this.factory() : this.factory;
       worker.onmessage = (event: MessageEvent<WorkerResponse>) => {

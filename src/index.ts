@@ -202,6 +202,7 @@ export type ZipEncoderRuntimeOptions = Required<Omit<ZipEncoderOptions, "worker"
  * return `undefined` to ask JSZipp to use the normal in-thread preparation path.
  * Implementations should be reusable across writers unless their own
  * documentation says otherwise; JSZipp does not terminate or dispose them.
+ * Returned prepared entries are treated as trusted input by the writer.
  */
 export interface ZipWorkerBackend {
   /**
@@ -246,7 +247,9 @@ export interface ZipEncoderOptions {
    * `web-jszipp/worker-plugin`. Only async `add()` / `ZipTransformStream`
    * writes consult this backend; `writeSync()` remains fully synchronous and
    * local. The caller owns backend lifetime and should terminate reusable
-   * worker backends when they are no longer needed.
+   * worker backends when they are no longer needed. When the backend is backed
+   * by one specific `Worker` instance instead of a factory, it cannot be
+   * recreated after termination.
    */
   worker?: ZipWorkerBackend;
   // When true, the writer materializes an explicit ZIP entry for every parent

@@ -57,7 +57,7 @@ installPolyfills_();
 const DecompressionStream_ = polyfill_.DecompressionStream_;
 
 const { max, min, ceil, imul } = Math;
-const { isInteger, isSafeInteger, isFinite } = Number;
+const { isInteger, isSafeInteger, isFinite, MAX_SAFE_INTEGER } = Number;
 
 // Per-entry metadata. On write, every field is optional input supplied via
 // `ZipInputEntry.meta`; on read, reader entries expose the parsed values.
@@ -2801,7 +2801,7 @@ const readU64 = (view: DataView_, offset: number, label: string): number => {
   const low = view.getUint32(offset, true);
   const high = view.getUint32(offset + 4, true);
   const value = high * 0x100000000 + low;
-  if (value > Number.MAX_SAFE_INTEGER) readU64Fail(label);
+  if (value > MAX_SAFE_INTEGER) readU64Fail(label);
   return value;
 };
 const readU64Fail =

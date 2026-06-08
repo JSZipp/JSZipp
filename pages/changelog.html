@@ -32,16 +32,224 @@
           Add future changes here before cutting the next package version.
         </div>
         <ul>
+          <li>No unreleased user-facing changes are documented yet.</li>
+        </ul>
+
+        <h2>1.0.8 - 2026-06-09</h2>
+        <div class="callout">
+          <strong>Current package version.</strong>
+          This release fixes ZIP64 reader boundary and legacy-archive edge cases, tightens split
+          bundle export wiring, reduces emitted runtime overhead, and expands independent fixture
+          validation for real-world ZIP interoperability.
+        </div>
+
+        <h3>Fixed</h3>
+        <ul>
           <li>
-            Fixed ZIP64 reader detection at the 65,535-entry boundary so classic ZIP archives
-            with exactly <code>65,535</code> entries no longer fail with <code>E_ZIP64</code>
-            unless ZIP64 structures are actually present.
+            Fixed ZIP64 reader detection at the 65,535-entry boundary so classic ZIP archives with
+            exactly <code>65,535</code> entries no longer fail with <code>E_ZIP64</code> unless a
+            ZIP64 locator/record is present or another legacy size, offset, or count field truly
+            requires ZIP64.
           </li>
+          <li>
+            Preserved strict ZIP64 failures when legacy EOCD central-directory size or offset fields
+            use ZIP64 sentinel values without the required ZIP64 locator and EOCD record.
+          </li>
+          <li>
+            Improved interoperability with legacy archives that saturate central-directory
+            compressed or uncompressed size fields without ZIP64 extras, while still requiring a
+            trustworthy 32-bit local-header fallback before accepting the entry.
+          </li>
+          <li>
+            Kept saturated central-directory size recovery disabled for data-descriptor entries,
+            where the local-header size fields are placeholders and cannot be trusted as a fallback.
+          </li>
+          <li>
+            Rejected malformed ZIP64 extra fields whose declared length overruns the available extra
+            data, instead of treating the malformed field as a usable ZIP64 source.
+          </li>
+          <li>
+            Preserved support for ZIP64 entries where only the local-header offset field is carried
+            in the ZIP64 extra, without incorrectly consuming ZIP64 values for unsaturated size
+            fields.
+          </li>
+          <li>
+            Accepted ZIP64 archives whose locator total-disks field uses the historical Python value
+            <code>0</code> instead of <code>1</code>, since JSZipp does not rely on that field.
+          </li>
+          <li>
+            Accepted central-directory ZIP64 extra fields with an empty body when no ZIP64-sized
+            fields are saturated, matching archives produced by legacy Ant / Commons Compress
+            tooling.
+          </li>
+          <li>
+            Improved EOCD selection when an archive comment begins with an EOCD-signature byte
+            pattern, so the reader selects the coherent real EOCD rather than the closest false
+            signature.
+          </li>
+        </ul>
+
+        <h3>Changed</h3>
+        <ul>
+          <li>
+            Tightened split bundle export wiring so reader, writer, and worker-plugin module entries
+            stay named-export-only, while dedicated UMD wrapper entries provide browser-global
+            namespace objects.
+          </li>
+          <li>
+            Updated the worker-plugin CommonJS output to expose named CommonJS exports, matching the
+            package subpath's public <code>createWorkerBackend</code> access pattern.
+          </li>
+          <li>
+            Simplified the internal worker preparation contract so worker backends receive the
+            already-normalized ZIP path directly, and directory state is derived from whether that
+            path ends with <code>/</code>.
+          </li>
+          <li>
+            Inlined worker option serialization and transfer-cloning logic into the worker client
+            path, removing single-use helper wrappers while preserving transfer-mode behavior.
+          </li>
+          <li>
+            Reduced temporary object creation in entry writing by having the entry writer append
+            central-directory chunks directly and return only local-file bytes.
+          </li>
+          <li>
+            Reduced parser allocation by mutating parsed central-directory entry records with the
+            sanitized path and compressed payload instead of spreading them into new result objects.
+          </li>
+          <li>
+            Reused shared DEFLATE token buffers and block-boundary arrays so tokenization returns the
+            block count instead of allocating a per-call tokenized-result object.
+          </li>
+          <li>
+            Hoisted repeated <code>Error</code>, <code>RangeError</code>, and
+            <code>DOMException</code> construction into small cold-path helpers where that reduces
+            repeated emitted code.
+          </li>
+        </ul>
+
+        <h3>Added</h3>
+        <ul>
+          <li>
+            Added reader coverage for standard non-ZIP64 archives with exactly
+            <code>65,535</code> entries and ZIP64 archives with <code>65,536</code> entries.
+          </li>
+          <li>
+            Added ZIP64 parse-error and interoperability tests for EOCD size/offset sentinels,
+            missing ZIP64 extras, malformed ZIP64 extra lengths, local-header size recovery,
+            data-descriptor rejection, local-offset-only ZIP64 extras, empty ZIP64 extras, and
+            Python-compatible ZIP64 locator records.
+          </li>
+          <li>
+            Added independent zlib-validated fixture recompression coverage under
+            <code>test-compression/</code>, validating real fixture ZIPs through JSZipp reads,
+            JSZipp rewrites, Node zlib inflation, CRC checks, size checks, metadata checks, and
+            rewritten archive parsing.
+          </li>
+          <li>
+            Added additional real-world ZIP fixtures from yauzl regressions, including ZIPs covering
+            large entry counts, legacy filenames, and real archive structures.
+          </li>
+          <li>
+            Added package/export smoke coverage for CommonJS worker-plugin access and emitted UMD
+            reader, writer, and worker-plugin global symbols.
+          </li>
+          <li>
+            Added reader coverage for empty ZIP archives with zero entries.
+          </li>
+        </ul>
+
+        <h3>Testing and validation</h3>
+        <ul>
+          <li>
+            Moved fixture recompression validation into <code>test-compression/</code> alongside its
+            ZIP fixtures, keeping the heavier real-world fixture suite separate from the main unit
+            test tree.
+          </li>
+          <li>
+            Improved fixture recompression performance by rewriting fixture entries at compression
+            level <code>1</code>, which still exercises the JSZipp DEFLATE writer and independent
+            zlib inflate checks without making compression ratio part of the assertion.
+          </li>
+          <li>
+            Bounded fixture validation concurrency to overlap asynchronous inflate work while keeping
+            memory use under control.
+          </li>
+          <li>
+            Added large-archive sampling for detailed fixture metadata and byte comparisons, while
+            preserving full fixture-level parse, size, CRC, rewrite, and rewritten-archive validation.
+          </li>
+          <li>
+            Added optional fixture timing diagnostics through <code>LOG_FIXTURE_TIMING=1</code> for
+            investigating slow real-world ZIP cases without adding default test output noise.
+          </li>
+        </ul>
+
+        <h3>Documentation</h3>
+        <ul>
+          <li>
+            Updated README and ZIP validation guidance to clarify that exactly
+            <code>65,535</code> entries can still be standard ZIP, and that ZIP64 is required only
+            once a legacy size, offset, or count field overflows or ZIP64 output is explicitly
+            forced.
+          </li>
+          <li>
+            Added bundle-size optimization guidance for separate throw helpers, documenting the
+            pattern as a narrow measured optimization for cold error paths rather than a general
+            style rule.
+          </li>
+          <li>
+            Updated implementation and compatibility specs to describe private file names, helper
+            names, and current module layout as implementation details rather than durable normative
+            requirements.
+          </li>
+          <li>
+            Updated documentation-maintenance guidance to prefer behavior, invariants, compatibility
+            requirements, and proof obligations over private source-file names when writing
+            normative repository docs.
+          </li>
+          <li>
+            Updated testing and end-to-end smoke-test specs to distinguish current harness layout
+            from the durable validation requirements those tests must satisfy.
+          </li>
+        </ul>
+
+        <h3>Compatibility</h3>
+        <ul>
+          <li>
+            Preserved the public reader and writer API: <code>ZipWriter</code>,
+            <code>ZipTransformStream</code>, <code>openZip</code>, <code>readZipStream</code>,
+            metadata types, worker-plugin entry points, and legacy browser subpaths remain
+            compatible.
+          </li>
+          <li>
+            Preserved ZIP64 writer behavior: <code>zip64: "auto"</code> emits ZIP64 only when
+            required, <code>"force"</code> always emits ZIP64-compatible records, and
+            <code>"off"</code> rejects archives that exceed standard ZIP limits.
+          </li>
+          <li>
+            Preserved strict ZIP safety checks for central-directory structure, local/central name
+            agreement, local/central flag agreement, duplicate local-header offsets, path policy, CRC
+            validation, and inflated-size validation.
+          </li>
+          <li>
+            Preserved reader compatibility with archives that include harmless empty ZIP64 extra
+            fields even when no corresponding 32-bit fields are saturated.
+          </li>
+          <li>
+            Preserved split reader/writer tree-shaking intent by keeping aggregate default objects
+            out of the ESM reader, writer, and worker-plugin entry modules.
+          </li>
+        </ul>
+
+        <h3>Breaking changes</h3>
+        <ul>
+          <li>No breaking public API changes.</li>
         </ul>
 
         <h2>1.0.7 - 2026-06-08</h2>
         <div class="callout">
-          <strong>Current package version.</strong>
+          <strong>Previous patch release.</strong>
           This release adds an opt-in Web Worker backend for async ZIP writing, publishes
           worker plugin and worker script entry points for modern and legacy builds, expands
           worker/API documentation and demos, and consolidates normative repository

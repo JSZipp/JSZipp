@@ -1,4 +1,7 @@
-# Locating the EOCD Robustly in ZIP Parsing
+# EOCD Selection Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 ## Overview
 

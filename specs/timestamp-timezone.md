@@ -1,4 +1,7 @@
-# Timezone Handling
+# Timestamp and Timezone Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 ZIP entries carry modification time in two places:
 

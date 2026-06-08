@@ -1,4 +1,7 @@
-# JSZipp Contract
+# JSZipp API Contract
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 This package exposes the JSZipp stream-native ZIP API shape:
 
@@ -12,6 +15,27 @@ This package exposes the JSZipp stream-native ZIP API shape:
 It also exposes a default `JSZipp` namespace object containing
 `ZipTransformStream`, `ZipWriter`, `readZipStream`, `openZip`, and
 `TimestampMode`.
+
+The optional worker package surface is intentionally separate from the default
+namespace:
+
+- `web-jszipp/worker-plugin` exports `createWorkerBackend()` and related worker
+  backend types for the modern build.
+- `web-jszipp/worker-script` is the single modern worker-script subpath:
+  `import` resolves to the static module worker script, while the default
+  condition resolves to the modern classic worker script.
+- `web-jszipp/browser-legacy/cr61ff58/worker-plugin` and
+  `web-jszipp/browser-legacy/cr86ff68/worker-plugin` export the matching compat
+  worker backend factory.
+- `web-jszipp/browser-legacy/cr61ff58/worker-script` and
+  `web-jszipp/browser-legacy/cr86ff68/worker-script` resolve to classic compat
+  worker scripts.
+
+The worker subpaths are separate public entry points, but their internal build
+logic is intentionally shared. The worker plugin and worker script must derive
+their compat-flag selection, polyfill seam bindings, and worker-only production
+error-code strings from one internal source so all worker artifacts preserve the
+same error categories and browser-floor behavior.
 
 The implementation targets modern browsers with WHATWG Streams, `Blob`, and
 `DecompressionStream`. ZIP writing uses JSZipp's in-repo raw DEFLATE encoder
@@ -41,6 +65,14 @@ on exception type and DOMException `name`, not exact human message text.
   and accepts a custom `mimeType`.
 - `ZipWriter` accepts `string`, `Uint8Array`, `ArrayBuffer`, `Blob`, and
   `ReadableStream<Uint8Array>` entry data through async `add()`.
+- `ZipWriter` accepts an optional `worker` backend created by
+  `createWorkerBackend()` or by a compatible custom implementation. The backend
+  is consulted only by async `add()` / transform-stream writing. It may return a
+  prepared entry or `undefined` to fall back to normal in-thread preparation.
+  JSZipp does not create workers by default and does not own backend lifetime;
+  callers terminate reusable worker backends when they are no longer needed.
+  Aborting one write must reject only that write; it must not implicitly
+  terminate a shared backend or strand unrelated in-flight writes.
 - `ZipWriter` also exposes synchronous `writeSync()` and `closeSync()` methods
   for in-memory `string`, `Uint8Array`, and `ArrayBuffer` entry data. A writer
   must be used in either async mode (`add()`/`close()`) or sync mode
@@ -51,9 +83,11 @@ on exception type and DOMException `name`, not exact human message text.
 - Options that affect the ZIP file specification itself — `level`, `zip64`,
   `comment`, `timestamps`, `pathMode`, and `explicitDirectoryEntries` — belong on
   `ZipEncoderOptions` (shared by `ZipWriter` and `ZipTransformStream`), **not** on
-  `ZipWriterOptions`. `ZipWriterOptions` adds only output-shaping options
-  (`outputAs`, `mimeType`). Any future spec-related option must be added to
-  `ZipEncoderOptions` so both the writer and the transform stream honor it.
+  `ZipWriterOptions`. The `worker` backend also lives on `ZipEncoderOptions`
+  because it affects async entry preparation without changing ZIP bytes.
+  `ZipWriterOptions` adds only output-shaping options (`outputAs`, `mimeType`).
+  Any future spec-related option must be added to `ZipEncoderOptions` so both the
+  writer and the transform stream honor it.
 - `explicitDirectoryEntries` (per-archive, default `false`) controls whether the
   writer synthesizes a standalone entry for each parent directory implied by an
   entry's path, emitting them (root-to-leaf) before the entry itself and skipping

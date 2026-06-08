@@ -1,4 +1,7 @@
-# ZIP Metadata Traps: A Comprehensive Engineering Reference
+# ZIP Validation and Safe Extraction Specification
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 ZIP looks simple, but it is a legacy container format with decades of backward-compatible extensions. A ZIP archive can contain duplicated metadata, optional metadata, platform-specific metadata, encrypted file data with unencrypted metadata, streaming records, ZIP64 records, comments, extra fields, and multiple parser-visible views of the same file tree.
 

@@ -178,6 +178,12 @@ import { ZipWriter, openZip } from "web-jszipp/browser-legacy/cr61ff58";
 import { ZipWriter, openZip } from "web-jszipp/browser-legacy/cr86ff68";
 ```
 
+For `browser-legacy/cr61ff58`, the bundle downlevels the library itself and makes
+`readZipStream()` async-iterable on Chrome 61 / Firefox 58. Your application code
+still needs its own old-browser transpilation: raw `for await...of` syntax does not
+parse on Chrome 61, so either transpile it or iterate the returned async iterable
+manually.
+
 If you prefer CDN script tags, use one of the following UMD builds:
 
 ```html
@@ -356,7 +362,7 @@ Generated archives use ZIP method `0x0000` for stored entries, ZIP method
 `0x0008` for deflated entries, and general-purpose bit flags `0x0800` to mark
 filenames/comments as UTF-8. For the ZIP-format distinction between compression
 method values and general-purpose bit flags, see
-[ZIP metadata traps](docs/zip-metadata-traps.md#compression-method-and-general-purpose-bit-flags).
+[ZIP validation spec](specs/zip-validation.md#21-the-compression-method-compatibility-trap).
 
 ## Choose The Output Type
 
@@ -421,6 +427,115 @@ const zipBytes = writer.closeSync();
 
 Do not mix sync and async writes on the same writer. JSZipp rejects mixed usage
 so entries are not accidentally routed to different output paths.
+
+## Opt-In Worker Writing
+
+Load `web-jszipp/worker-plugin` after the main JSZipp build when large async
+`add()` calls should prepare and compress entries off the main thread. The
+default `web-jszipp` import is unchanged and does not create workers. Pass the
+backend to the writer that should use it.
+
+JSZipp does not create blob URL workers internally, so strict extension CSP can
+host the static worker script and pass an explicit factory. Use the worker
+script that matches the main build you loaded. The worker path is
+responsiveness-first: it can keep large async writes off the main thread, but it
+adds `postMessage` and cloning/transfer overhead and can raise peak memory
+because the caller and worker may hold the same source bytes at the same time.
+That is why the backend defaults `minSize` to `32768` (32 KiB) instead of
+offloading every entry.
+
+```ts
+import { ZipWriter } from "web-jszipp";
+import { createWorkerBackend } from "web-jszipp/worker-plugin";
+
+// Modern build: static module worker.
+const worker = createWorkerBackend({
+  workerSource: () => new Worker(browser.runtime.getURL("vendor/jszipp.worker.mjs"), {
+    type: "module"
+  }),
+  minSize: 128 * 1024
+});
+
+try {
+  const writer = new ZipWriter({ outputAs: "blob", worker });
+  await writer.add({ path: "large.bin", data: file });
+  const zipBlob = await writer.close();
+} finally {
+  worker.terminate();
+}
+```
+
+The `workerSource` option accepts either a `Worker` instance or a factory
+function `() => new Worker(...)`.
+
+Use the factory form in most cases:
+
+- it creates the worker lazily, only when the backend actually needs it
+- it lets the backend create a fresh worker again after `terminate()` or a crash
+- if construction throws and `fallback` is enabled, the backend can still use
+  the normal in-thread path
+
+Passing a plain `Worker` instance is still valid when your app wants to create
+and own one specific worker up front. JSZipp treats that worker as dedicated to
+the backend: it attaches event listeners to it and retires the backend if that
+worker is terminated or crashes, because an instance-backed backend cannot
+create a replacement. After `terminate()` or a worker failure on an
+instance-backed backend, future async writes use the normal in-thread path when
+`fallback` is enabled, or reject with `InvalidStateError` / `E_TERMINATED` when
+`fallback: false` requires worker preparation.
+
+If a worker cannot be constructed, the backend falls back to the normal in-thread
+writer unless `fallback: false` is set. `writeSync()` and `closeSync()` do not
+use the backend and remain local synchronous operations. Aborting one write
+rejects only that write; it does not automatically terminate a shared backend or
+cancel unrelated in-flight writes using the same worker. It also does not stop
+compression already running inside the worker; abort is main-side request
+isolation, not worker CPU cancellation.
+
+If a worker request fails after the worker was created, `fallback: true` still
+tries to continue locally for requests whose source data remains usable in the
+main thread. That decision is per request, not just per backend mode. Even with
+`transfer: "transfer"`, fallback still works for `string`, `Blob`, and partial
+`Uint8Array` views because JSZipp does not transfer the caller-owned bytes in
+those cases. The non-fallback case is when the worker took ownership of the
+original caller-owned `ArrayBuffer` or full-span `Uint8Array`, because that
+buffer may already be detached on worker failure.
+
+If you pass a plain `Worker` instance, JSZipp treats it as dedicated to that
+backend and patches its `terminate()` method. Calling either
+`backend.terminate()` or `worker.terminate()` retires the backend and rejects
+any in-flight worker requests instead of leaving them pending forever. Prefer
+`backend.terminate()` when your app is done with the backend so the ownership is
+obvious at the call site.
+
+Prepared entries returned by a worker backend are trusted by the writer. The
+bundled worker script is intended for that role; custom `ZipWorkerBackend`
+implementations should be treated as trusted code.
+
+For extension pages that use a compat build, load the matching worker plugin and
+classic worker script instead of the modern module pair:
+
+```html
+<!-- Chrome 61 / Firefox 58 compatible page scripts -->
+<script src="vendor/cr61ff58/jszipp.umd.js"></script>
+<script src="vendor/cr61ff58/jszipp.worker-plugin.umd.js"></script>
+<script>
+const worker = JSZippWorkerPlugin.createWorkerBackend({
+  workerSource: () => new Worker(browser.runtime.getURL("vendor/cr61ff58/jszipp.worker.js"))
+});
+
+const writer = new JSZipp.ZipWriter({ outputAs: "blob", worker });
+</script>
+```
+
+The CR86/FF68 compat build follows the same pattern with
+`vendor/cr86ff68/jszipp.umd.js`,
+`vendor/cr86ff68/jszipp.worker-plugin.umd.js`, and
+`vendor/cr86ff68/jszipp.worker.js`. Do not pass `{ type: "module" }` for
+the compat worker script; it is a classic worker script for older browsers. The
+automated end-to-end worker smoke test covers the modern Chromium module-worker
+path; the compat classic-worker paths still require manual verification on their
+actual legacy browsers.
 
 ## Read A ZIP By File Name
 
@@ -554,7 +669,7 @@ Supported fallback values:
 - any charset label supported by `TextDecoder`, such as `"utf-8"`,
   `"shift_jis"`, or `"windows-1252"`
 
-See [Filename Charset Handling](docs/charset.md) for
+See [Filename Charset Specification](specs/filename-charset.md) for
 details on ZIP filename charset behavior and choosing a fallback.
 
 ## Stream Pipeline Writing
@@ -596,6 +711,10 @@ for await (const entry of readZipStream(zipBlob.stream())) {
   }
 }
 ```
+
+If your app targets `browser-legacy/cr61ff58`, this example assumes your own code is
+also transpiled for Chrome 61. The compat bundle makes the returned object
+async-iterable, but Chrome 61 cannot parse raw `for await...of` in page or app code.
 
 `ZipStreamEntry` payloads are single-use. For each entry, call exactly one of:
 
@@ -652,11 +771,19 @@ interface ZipWriterOptions {
   pathMode?: "strict" | "sanitize" | "unsafe" | "strict-package";
   signal?: AbortSignal;
   onProgress?: (progress: ZipProgress) => void;
+  worker?: ZipWorkerBackend;
   explicitDirectoryEntries?: boolean;
   outputAs?: "stream" | "blob" | "response" | "uint8array" | "arraybuffer";
   mimeType?: string;
 }
 ```
+
+`worker` is opt-in and writer-owned configuration. Create it with
+`createWorkerBackend()` from `web-jszipp/worker-plugin` when large async
+`add()` calls should prepare entries in a Web Worker. The backend defaults
+`minSize` to `32768` bytes so small entries stay local unless you opt into a
+lower threshold. Synchronous `writeSync()` / `closeSync()` never use the
+backend.
 
 ### `new ZipTransformStream(options?)`
 
@@ -796,7 +923,7 @@ with generated metadata, so prefer `unixPermissions`, `dosAttributes`, and the
 
 For field validation and timestamp-mode interactions, see the
 [API reference](pages/api.html#entry-meta). For ZIP-format background on what
-metadata adds bytes, see [ZIP optional metadata](docs/zip-optional-metadata.md).
+metadata adds bytes, see [ZIP metadata overhead spec](specs/zip-metadata-overhead.md).
 
 ### `ZipRandomAccessEntry`
 
@@ -844,7 +971,7 @@ The byte counts below are the **additional timestamp extra-field bytes** JSZipp
 writes into those existing locations. They do not include the base local header,
 Central Directory header, filename bytes, comments, ZIP64 records, EOCD records,
 or compressed file data. For a broader breakdown of ZIP metadata size, see
-[ZIP optional metadata](docs/zip-optional-metadata.md).
+[ZIP metadata overhead spec](specs/zip-metadata-overhead.md).
 
 - **`Dos` (always on).** Two bytes of date plus two of time are already reserved
   in every local header and Central Directory header, so it adds no extra bytes
@@ -895,7 +1022,7 @@ times, since it is the largest of the three.
 - Modification times are always written to the legacy DOS fields. The
   `timestamps` option controls which UTC timestamp extras are added; see
   [Timestamp Modes and Archive Size](#timestamp-modes-and-archive-size) and
-  [docs/timezone.md](./docs/timezone.md) for the detailed timezone model.
+  [specs/timestamp-timezone.md](./specs/timestamp-timezone.md) for the detailed timezone model.
 - `explicitDirectoryEntries` (default `false`) controls whether the writer
   materializes a standalone entry for every parent directory implied by an
   entry's path (`a/b/c.txt` also emits `a/` and `a/b/`). The default keeps the
@@ -911,8 +1038,8 @@ times, since it is the largest of the three.
 - `readZipStream` currently exposes the forward-iteration API by collecting the
   input stream and parsing the Central Directory first.
 
-See [CONTRACT.md](./CONTRACT.md) for the detailed implementation contract and
-current runtime boundaries. See [docs/timezone.md](./docs/timezone.md) for the
+See [specs/api-contract.md](./specs/api-contract.md) for the detailed API contract and
+current runtime boundaries. See [specs/timestamp-timezone.md](./specs/timestamp-timezone.md) for the
 timestamp timezone model.
 
 ## Build
@@ -932,7 +1059,7 @@ pnpm exec playwright install chromium
 pnpm run test:e2e
 ```
 
-See [docs/testing.md](docs/testing.md) for what each layer proves.
+See [specs/testing-requirements.md](specs/testing-requirements.md) for what each layer proves.
 
 The npm package points at generated files under `dist/`. `prepack` runs the
 build and test suite before `pnpm pack` / `pnpm publish`, so the published
@@ -946,14 +1073,27 @@ Build output:
 - `dist/jszipp.umd.js`
 - `dist/jszipp.writer.umd.js`
 - `dist/jszipp.reader.umd.js`
+- `dist/jszipp.worker-plugin.mjs`
+- `dist/jszipp.worker-plugin.cjs`
+- `dist/jszipp.worker-plugin.umd.js`
+- `dist/jszipp.worker.mjs`
+- `dist/jszipp.worker.js`
 - `dist/cr61ff58/jszipp.mjs`
 - `dist/cr61ff58/jszipp.cjs`
 - `dist/cr61ff58/jszipp.umd.js`
+- `dist/cr61ff58/jszipp.worker-plugin.mjs`
+- `dist/cr61ff58/jszipp.worker-plugin.cjs`
+- `dist/cr61ff58/jszipp.worker-plugin.umd.js`
+- `dist/cr61ff58/jszipp.worker.js`
 - `dist/cr61ff58/jszipp.reader.umd.js`
 - `dist/cr61ff58/jszipp.writer.umd.js`
 - `dist/cr86ff68/jszipp.mjs`
 - `dist/cr86ff68/jszipp.cjs`
 - `dist/cr86ff68/jszipp.umd.js`
+- `dist/cr86ff68/jszipp.worker-plugin.mjs`
+- `dist/cr86ff68/jszipp.worker-plugin.cjs`
+- `dist/cr86ff68/jszipp.worker-plugin.umd.js`
+- `dist/cr86ff68/jszipp.worker.js`
 - `dist/cr86ff68/jszipp.reader.umd.js`
 - `dist/cr86ff68/jszipp.writer.umd.js`
 - `dist/index.d.ts`

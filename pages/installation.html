@@ -17,6 +17,31 @@ yarn add jszipp</code></pre>
   readZipStream
 } from "web-jszipp";</code></pre>
       <p><code>JSZipp</code> is the default namespace export. Named exports are usually clearer in application code and help bundlers keep unused code out of the final app.</p>
+      <h2>Worker plugin</h2>
+      <p>The Web Worker backend is opt-in. Import the plugin only in pages that should prepare large async <code>ZipWriter.add()</code> entries off the main thread, then pass the backend to the writer.</p>
+      <pre><code>import { ZipWriter } from "web-jszipp";
+import { createWorkerBackend } from "web-jszipp/worker-plugin";
+
+const worker = createWorkerBackend({
+  workerSource: () =&gt; new Worker("/vendor/jszipp.worker.mjs", { type: "module" })
+});
+
+try {
+  const writer = new ZipWriter({ outputAs: "blob", worker });
+  await writer.add({ path: "large.bin", data: file });
+  const zipBlob = await writer.close();
+} finally {
+  worker.terminate();
+}</code></pre>
+      <p>For compat builds, use the matching compat plugin and classic worker script:</p>
+      <pre><code>import { ZipWriter } from "web-jszipp/browser-legacy/cr86ff68";
+import { createWorkerBackend } from "web-jszipp/browser-legacy/cr86ff68/worker-plugin";
+
+const worker = createWorkerBackend({
+  workerSource: () =&gt; new Worker("/vendor/cr86ff68/jszipp.worker.js")
+});</code></pre>
+      <p>Use <code>cr61ff58</code> paths for the Chrome 61 / Firefox 58 build. Do not pass <code>{ type: "module" }</code> for compat worker scripts; they are classic workers for older browsers.</p>
+      <p>The compat bundles only cover the library code they ship. If your app targets Chrome 61, your own code still needs transpilation for that browser floor; for example, raw <code>for await...of</code> in page code will not parse there.</p>
       <h2>Runtime</h2>
       <ul>
         <li>ECMAScript 2019 output.</li>

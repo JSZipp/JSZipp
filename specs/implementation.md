@@ -1,5 +1,8 @@
 # JSZipp Compression and Decompression Implementation Outline
 
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
+
 Source: [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
 
 ## 1. High-Level Architecture
@@ -111,6 +114,77 @@ Justification:
 * Keeping sync mode separate allows `writeSync()` and `closeSync()` to complete without `await`.
 * The implementation rejects mixing async and sync modes to avoid silently routing output chunks to different internal buffers.
 
+### 3.3 Optional Worker Preparation
+
+`ZipEncoderOptions.worker` is an optional async backend hook:
+
+```ts
+interface ZipWorkerBackend {
+  prepare(
+    input: ZipInputEntry,
+    options: ZipEncoderRuntimeOptions,
+    pathInfo: { path: string; isDirectory: boolean }
+  ): Promise<ZipPreparedEntry | undefined>;
+}
+```
+
+`ZipWriter.add()` and `ZipTransformStream` both reserve and validate the path
+first, then ask the backend to prepare the entry. If the backend returns a
+`ZipPreparedEntry`, JSZipp commits those already-compressed bytes. If it returns
+`undefined`, JSZipp runs the normal in-thread `prepareEntry()` path. If it
+throws, the reserved path is released and the write rejects.
+
+The bundled implementation is `createWorkerBackend()` from
+`web-jszipp/worker-plugin`. It posts eligible async entries to the static worker
+script built from `src/worker-script.ts`, which calls
+`__privatePrepareEntryForWorker()` and returns the prepared entry. Directory
+entries, `ReadableStream` inputs, and inputs below `minSize` fall back to the
+normal path. `writeSync()` and `closeSync()` never call the backend.
+
+`src/worker-plugin.ts` and `src/worker-script.ts` are a matched pair and MUST
+share one internal build-flag/polyfill seam module (`src/worker-common.ts`).
+That shared module owns:
+
+- the `__DEV__` / compat-flag selection logic;
+- the worker-side polyfill bindings (`AbortController_`, `throwIfAborted_`,
+  `installPolyfills_`);
+- the worker-only production error-code strings.
+
+Do not duplicate that selection logic or those constants separately in both
+entries. The worker script in particular MUST construct its placeholder signal
+via `new AbortController_().signal`, never raw `new AbortController().signal`,
+so the compat worker builds keep working on floors where the native class is
+missing or patched through the seam.
+
+JSZipp does not construct blob URL workers internally. Applications usually pass
+a worker factory so extension and app CSP can point at a static script while
+the backend keeps control over when the worker is created:
+
+```ts
+const worker = createWorkerBackend({
+  workerSource: () => new Worker("/vendor/jszipp.worker.mjs", { type: "module" })
+});
+```
+
+`workerSource` also accepts a plain `Worker` instance. That form is valid when
+the caller wants to own one specific pre-created worker, but it gives up lazy
+construction and automatic recreation after that instance is terminated or
+fails. JSZipp treats an instance-backed worker as dedicated to that backend and
+wraps `worker.terminate()` so a direct termination retires the backend and
+rejects in-flight worker requests instead of leaving them pending.
+
+The worker script must match the main build:
+
+| Main build | Plugin import or script | Worker script |
+| ---------- | ----------------------- | ------------- |
+| Modern ESM/CJS | `web-jszipp/worker-plugin` | `web-jszipp/worker-script` / `dist/jszipp.worker.mjs` module worker |
+| Modern UMD | `dist/jszipp.worker-plugin.umd.js` | `dist/jszipp.worker.js` classic worker |
+| CR61FF58 compat | `web-jszipp/browser-legacy/cr61ff58/worker-plugin` or `dist/cr61ff58/jszipp.worker-plugin.umd.js` | `dist/cr61ff58/jszipp.worker.js` classic worker |
+| CR86FF68 compat | `web-jszipp/browser-legacy/cr86ff68/worker-plugin` or `dist/cr86ff68/jszipp.worker-plugin.umd.js` | `dist/cr86ff68/jszipp.worker.js` classic worker |
+
+Do not pass `{ type: "module" }` for the compat worker scripts. They are classic
+worker bundles so older browsers can load them.
+
 ---
 
 ## 4. Compression Method Selection
@@ -133,7 +207,7 @@ These correspond to standard ZIP methods:
 
 For the generic ZIP-format meaning of compression method values and
 general-purpose bit flags, see
-[ZIP metadata traps](zip-metadata-traps.md#compression-method-and-general-purpose-bit-flags).
+[ZIP validation spec](../specs/zip-validation.md#21-the-compression-method-compatibility-trap).
 
 ### 4.2 Selection Logic
 

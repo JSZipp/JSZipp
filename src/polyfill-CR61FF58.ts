@@ -10,19 +10,43 @@ export {
 } from "./polyfill-compat";
 export { arrayBuffer_, throwIfAborted_ };
 
-// Minimal poll-based AbortSignal (no EventTarget; the library only polls
-// throwIfAborted()). It is NOT a subclass of native AbortSignal because Chrome 61
-// has no base class to extend. The throwIfAborted method is defined under the SAME
-// private key the library indexes with ([throwIfAborted_]); on Chrome 61 these poly
-// signals are the only ones in play (the user cannot construct a native signal),
-// and on Firefox 58 the native AbortController is used instead and its signals get
-// the key via installPolyfills. `reason` may be undefined, hence the DOMException
-// default.
+type AbortListener =
+  | ((event: Event) => void)
+  | { handleEvent(event: Event): void };
+
+// Minimal AbortSignal polyfill. It is NOT a subclass of native AbortSignal
+// because Chrome 61 has no base class to extend. The throwIfAborted method is
+// defined under the SAME private key the library indexes with
+// ([throwIfAborted_]); on Chrome 61 these poly signals are the only ones in play
+// (the user cannot construct a native signal), and on Firefox 58 the native
+// AbortController is used instead and its signals get the key via
+// installPolyfills. `reason` may be undefined, hence the DOMException default.
+//
+// The worker backend also needs the tiny EventTarget subset below so it can
+// subscribe to "abort" and cancel in-flight worker requests without assuming the
+// full platform AbortSignal shape exists.
 class AbortSignalPoly {
   aborted = false;
   reason: unknown = undefined;
+  private readonly abortListeners = new Set<AbortListener>();
   [throwIfAborted_](this: AbortSignal & { reason?: unknown }): void {
     if (this.aborted) throw this.reason ?? new DOMException("signal is aborted without reason", "AbortError");
+  }
+  addEventListener(type: string, listener: AbortListener | null): void {
+    if (type !== "abort" || !listener) return;
+    this.abortListeners.add(listener);
+  }
+  removeEventListener(type: string, listener: AbortListener | null): void {
+    if (type !== "abort" || !listener) return;
+    this.abortListeners.delete(listener);
+  }
+  dispatchAbort(): void {
+    const event = { type: "abort", target: this } as unknown as Event;
+    for (const listener of [...this.abortListeners]) {
+      if (typeof listener === "function") listener.call(this, event);
+      else listener.handleEvent(event);
+    }
+    this.abortListeners.clear();
   }
 }
 
@@ -32,6 +56,7 @@ class AbortControllerPoly {
     if (this.signal.aborted) return;
     this.signal.aborted = true;
     this.signal.reason = reason ?? new DOMException("signal is aborted without reason", "AbortError");
+    this.signal.dispatchAbort();
   }
 }
 

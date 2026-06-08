@@ -1,4 +1,7 @@
-# Testing Overview and Limitations
+# Testing Requirements
+
+This file is normative. See [Specification Index](README.md) for repository-wide
+specification scope and keyword meaning.
 
 This document summarizes what the current `test/jszipp.test.ts` suite is designed
 to prove, where it intentionally goes deeper than public round trips, and where
@@ -29,7 +32,8 @@ Covered behavior includes:
 
 - Default namespace export and named API exports.
 - Published package export map coverage for ESM and CommonJS root,
-  `jszipp/writer`, and `jszipp/reader` entry points.
+  browser legacy subpaths, worker plugin subpaths, and emitted worker script
+  artifacts.
 - Stored entries when `level: 0` is used.
 - Deflated entries with metadata preservation.
 - Archive comments and entry comments.
@@ -43,6 +47,8 @@ Covered behavior includes:
 - Rejection of writes or closes after the writer is already closed.
 - Rejection of duplicate normalized entry paths while writing.
 - Progress callbacks and abort signals.
+- Worker backend round trips, fallback behavior, backend reuse, and the rule that
+  synchronous writer methods remain local.
 - Per-entry compression method overrides.
 - Per-entry compression level overrides.
 - Invalid compression level validation.
@@ -51,6 +57,12 @@ Covered behavior includes:
 
 The sync writer tests intentionally stay focused on in-memory inputs, because
 `Blob` and `ReadableStream` cannot be consumed synchronously.
+
+The worker backend tests run with a fake in-process `Worker`. They prove the
+public backend contract and archive bytes, including byte-identical output versus
+the normal in-thread writer, but they do not prove that browser worker script
+URLs, extension CSP, or classic-versus-module worker loading are configured
+correctly. Those are covered by build artifact checks plus the worker demo.
 
 ### Reader APIs
 
@@ -243,26 +255,35 @@ It drives the `demo/compress.html` demo, which imports the real
 `file://` origin cannot load the module. `playwright.config.ts` starts that server
 through its `webServer` option.
 
-`e2e/compress.spec.ts` selects the `e2e/fixtures/` folder, exercises the
-compression-level control, clicks **Compress**, and captures the resulting
-download. The downloaded archive is then re-read with **yauzl** — an independent
-reader, the same cross-tool strategy used for fixtures elsewhere — so a green run
-means the bytes the browser produced are a structurally valid ZIP, not merely
-something JSZipp can read back. The spec asserts entry names and content, that the
-balanced level deflates (method 8) while the store level does not (method 0), and
-that **Clear** resets the demo. The demo sets a `data-ready` flag once its module
-bootstrap finishes so the test never races the listeners.
+`e2e/compress.spec.ts` has two layers. The demo-driven smoke tests select the
+`e2e/fixtures/` folder, exercise the compression-level control, click
+**Compress**, and capture the resulting download. The downloaded archive is then
+re-read with **yauzl** — an independent reader, the same cross-tool strategy used
+for fixtures elsewhere — so a green run means the bytes the browser produced are
+a structurally valid ZIP, not merely something JSZipp can read back. Those specs
+assert entry names and content, that the balanced level deflates (method 8) while
+the store level does not (method 0), and that **Clear** resets the demo. The demo
+sets a `data-ready` flag once its module bootstrap finishes so the test never
+races the listeners.
+
+The same file also includes a direct worker-path smoke test: inside Chromium it
+imports `dist/jszipp.mjs` and `dist/jszipp.worker-plugin.mjs`, constructs a real
+module worker from `dist/jszipp.worker.mjs`, writes an archive through
+`createWorkerBackend()`, and validates the result with yauzl. That closes the
+highest-risk packaging gap for modern worker loading.
 
 What a green run does **not** prove: it runs Playwright's bundled Chromium, a
 *modern* engine, so it does not exercise the legacy floors (Chrome 61 / Firefox 58
 or 86 / 68) — those still need the manual real-browser check in
-browser-compatibility.md §8.5 — nor the UMD wrapper (the demo loads the ESM build).
-However, the Blob/File input path in `ZipWriter.add()` **is** exercised here: the
-demo selects files via the file input control (`<input webkitdirectory>`), which
-creates `File` / `Blob` objects and passes them to the writer in the real browser.
-The compat floors' `Blob.prototype.arrayBuffer` FileReader fallback (when native
-`Blob.arrayBuffer` is absent on CR61FF58 / CR86FF68) would need to be tested in an
-actual Chrome 61 / Firefox 58 / 68 respectively, not in Chromium.
+browser-compatibility.md §8.5 — and it does not prove extension-specific CSP,
+packaging, or URL-resolution rules. However, the Blob/File input path in
+`ZipWriter.add()` **is** exercised here: the demo selects files via the file input
+control (`<input webkitdirectory>`), which creates `File` / `Blob` objects and
+passes them to the writer in the real browser. The compat floors'
+`Blob.prototype.arrayBuffer` FileReader fallback (when native `Blob.arrayBuffer`
+is absent on CR61FF58 / CR86FF68) and the classic-worker outputs
+(`dist/cr61ff58/jszipp.worker.js` and `dist/cr86ff68/jszipp.worker.js`) would
+still need to be tested in the actual legacy browsers.
 Run it after a build:
 
 ```sh

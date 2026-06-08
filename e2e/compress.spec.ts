@@ -124,6 +124,36 @@ test("store level keeps entries uncompressed (method 0)", async ({ page }) => {
   expect(contents["fixtures/notes.txt"].method).toBe(0);
 });
 
+test("loads the built worker plugin and real module worker script in Chromium", async ({ page }) => {
+  await page.goto("/demo/compress.html");
+
+  const archiveBytes = await page.evaluate(async () => {
+    const [{ ZipWriter }, { createWorkerBackend }] = await Promise.all([
+      import("/dist/jszipp.mjs"),
+      import("/dist/jszipp.worker-plugin.mjs")
+    ]);
+
+    const worker = createWorkerBackend({
+      fallback: false,
+      minSize: 0,
+      workerSource: () => new Worker("/dist/jszipp.worker.mjs", { type: "module" })
+    });
+
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker });
+      await writer.add({ path: "worker.txt", data: "worker path ok\n".repeat(256) });
+      return Array.from(await writer.close());
+    } finally {
+      worker.terminate();
+    }
+  });
+
+  const contents = await readZipWithYauzl(Buffer.from(archiveBytes));
+  expect(Object.keys(contents)).toEqual(["worker.txt"]);
+  expect(contents["worker.txt"].text).toBe("worker path ok\n".repeat(256));
+  expect(contents["worker.txt"].method).toBe(8);
+});
+
 test("clear resets the demo state", async ({ page }) => {
   await page.setInputFiles("#file-input", FIXTURES_DIR);
   await expect(page.locator("#file-count")).toHaveText("2");

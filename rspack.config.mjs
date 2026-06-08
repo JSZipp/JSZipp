@@ -52,18 +52,41 @@ const mkMinimizer = (ecma, unsafeArrows = true) =>
         }
       });
 
+const modernDefines = (namespace = true) => ({
+  __DEV__: "false",
+  // Older-browser flags OFF: modern builds collapse the polyfill seam to
+  // native and tree-shake the compat modules + web-streams-polyfill out.
+  CR61FF58: "false",
+  CR86FF68: "false",
+  // Sub-entry UMD bundles import selected exports from src/index.ts. This flag
+  // prevents src/index.ts from materializing the full default namespace when
+  // that would keep the opposite half of the library alive.
+  __JSZIPP_NAMESPACE__: String(namespace)
+});
+
+const compatDefines = (flag, namespace = true) => ({
+  __DEV__: "false",
+  CR61FF58: String(flag === "CR61FF58"),
+  CR86FF68: String(flag === "CR86FF68"),
+  __JSZIPP_NAMESPACE__: String(namespace)
+});
+
+const withModernApiFlags = (config, namespace) => ({
+  ...config,
+  plugins: [new rspack.DefinePlugin(modernDefines(namespace))]
+});
+
+const compatBuild = (flag, esTarget, ecma, externalHelpers = false, namespace = true) => ({
+  ...compatBase(flag, esTarget, ecma, externalHelpers),
+  plugins: [new rspack.DefinePlugin(compatDefines(flag, namespace))]
+});
+
 const base = {
   mode: "production",
   target: ["web", "es2019"],
   devtool: false,
   plugins: [
-    new rspack.DefinePlugin({
-      __DEV__: "false",
-      // Older-browser flags OFF: modern builds collapse the polyfill seam to
-      // native and tree-shake the compat modules + web-streams-polyfill out.
-      CR61FF58: "false",
-      CR86FF68: "false"
-    })
+    new rspack.DefinePlugin(modernDefines())
   ],
   optimization: {
     minimize: true,
@@ -98,7 +121,7 @@ const compatBase = (flag, esTarget, ecma, externalHelpers = false) => ({
   ...base,
   target: ["web", esTarget],
   plugins: [
-    new rspack.DefinePlugin({ __DEV__: "false", CR61FF58: String(flag === "CR61FF58"), CR86FF68: String(flag === "CR86FF68") })
+    new rspack.DefinePlugin(compatDefines(flag))
   ],
   optimization: { ...base.optimization, minimizer: [mkMinimizer(ecma, false)] },
   module: {
@@ -127,11 +150,35 @@ export default defineConfig([
     experiments: { outputModule: true },
     output: { filename: "jszipp.mjs", path: dist, library: { type: "modern-module" } }
   },
+  // Worker async plugin/script — keep diagnostics adjacent to the matching main build.
+  {
+    ...base,
+    entry: "./src/worker-plugin.ts",
+    experiments: { outputModule: true },
+    output: { filename: "jszipp.worker-plugin.mjs", path: dist, library: { type: "modern-module" } }
+  },
+  // ESM worker script — static file for CSP-safe Worker construction.
+  {
+    ...withModernApiFlags(base, false),
+    entry: "./src/worker-script.ts",
+    experiments: { outputModule: true },
+    output: { filename: "jszipp.worker.mjs", path: dist, library: { type: "modern-module" } }
+  },
   // UMD (full) — JSZipp global, both reader + writer.
   {
     ...base,
     entry: "./src/index.ts",
     output: { filename: "jszipp.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZipp") }
+  },
+  {
+    ...base,
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZippWorkerPlugin") }
+  },
+  {
+    ...withModernApiFlags(base, false),
+    entry: "./src/worker-script.ts",
+    output: { filename: "jszipp.worker.js", path: dist, globalObject: "globalThis", library: umd("JSZippWorker") }
   },
   // CJS (full) — Node/CommonJS require() entry.
   {
@@ -139,69 +186,116 @@ export default defineConfig([
     entry: "./src/index.ts",
     output: { filename: "jszipp.cjs", path: dist, library: cjs }
   },
-  // UMD (writer-only) — JSZippWriter global; reader tree-shaken out.
   {
     ...base,
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.cjs", path: dist, library: cjs }
+  },
+  // UMD (writer-only) — JSZippWriter global; reader tree-shaken out.
+  {
+    ...withModernApiFlags(base, false),
     entry: "./src/writer.ts",
     output: { filename: "jszipp.writer.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZippWriter") }
   },
   // UMD (reader-only) — JSZippReader global; compressor tree-shaken out.
   {
-    ...base,
+    ...withModernApiFlags(base, false),
     entry: "./src/reader.ts",
     output: { filename: "jszipp.reader.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZippReader") }
   },
   // ---- Compat: CR61FF58 (min Chrome 61 / Firefox 58) ----
   {
-    ...compatBase("CR61FF58", "es2015", 2015, true),
+    ...compatBuild("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
     experiments: { outputModule: true },
     output: { filename: "jszipp.mjs", path: cr61ff58Dist, library: { type: "modern-module" } }
   },
   {
-    ...compatBase("CR61FF58", "es2015", 2015, true),
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
+    entry: "./src/worker-plugin.ts",
+    experiments: { outputModule: true },
+    output: { filename: "jszipp.worker-plugin.mjs", path: cr61ff58Dist, library: { type: "modern-module" } }
+  },
+  {
+    ...compatBuild("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
     output: { filename: "jszipp.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZipp") }
   },
   {
-    ...compatBase("CR61FF58", "es2015", 2015, true),
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippWorkerPlugin") }
+  },
+  {
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
+    entry: "./src/worker-script.ts",
+    output: { filename: "jszipp.worker.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippWorker") }
+  },
+  {
+    ...compatBuild("CR61FF58", "es2015", 2015, true),
     entry: "./src/index.ts",
     output: { filename: "jszipp.cjs", path: cr61ff58Dist, library: cjs }
   },
   {
-    ...compatBase("CR61FF58", "es2015", 2015, true),
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.cjs", path: cr61ff58Dist, library: cjs }
+  },
+  {
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
     entry: "./src/reader.ts",
     output: { filename: "jszipp.reader.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippReader") }
   },
   {
-    ...compatBase("CR61FF58", "es2015", 2015, true),
+    ...compatBuild("CR61FF58", "es2015", 2015, true, false),
     entry: "./src/writer.ts",
     output: { filename: "jszipp.writer.umd.js", path: cr61ff58Dist, globalObject: "typeof self !== 'undefined' ? self : this", library: umd("JSZippWriter") }
   },
   // ---- Compat: CR86FF68 (min Chrome 86 / Firefox 68) ----
   {
-    ...compatBase("CR86FF68", "es2019", 2019),
+    ...compatBuild("CR86FF68", "es2019", 2019),
     entry: "./src/index.ts",
     experiments: { outputModule: true },
     output: { filename: "jszipp.mjs", path: cr86ff68Dist, library: { type: "modern-module" } }
   },
   {
-    ...compatBase("CR86FF68", "es2019", 2019),
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
+    entry: "./src/worker-plugin.ts",
+    experiments: { outputModule: true },
+    output: { filename: "jszipp.worker-plugin.mjs", path: cr86ff68Dist, library: { type: "modern-module" } }
+  },
+  {
+    ...compatBuild("CR86FF68", "es2019", 2019),
     entry: "./src/index.ts",
     output: { filename: "jszipp.umd.js", path: cr86ff68Dist, globalObject: "globalThis", library: umd("JSZipp") }
   },
   {
-    ...compatBase("CR86FF68", "es2019", 2019),
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.umd.js", path: cr86ff68Dist, globalObject: "globalThis", library: umd("JSZippWorkerPlugin") }
+  },
+  {
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
+    entry: "./src/worker-script.ts",
+    output: { filename: "jszipp.worker.js", path: cr86ff68Dist, globalObject: "globalThis", library: umd("JSZippWorker") }
+  },
+  {
+    ...compatBuild("CR86FF68", "es2019", 2019),
     entry: "./src/index.ts",
     output: { filename: "jszipp.cjs", path: cr86ff68Dist, library: cjs }
   },
   {
-    ...compatBase("CR86FF68", "es2019", 2019),
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
+    entry: "./src/worker-plugin.ts",
+    output: { filename: "jszipp.worker-plugin.cjs", path: cr86ff68Dist, library: cjs }
+  },
+  {
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
     entry: "./src/reader.ts",
     output: { filename: "jszipp.reader.umd.js", path: cr86ff68Dist, globalObject: "globalThis", library: umd("JSZippReader") }
   },
   {
-    ...compatBase("CR86FF68", "es2019", 2019),
+    ...compatBuild("CR86FF68", "es2019", 2019, false, false),
     entry: "./src/writer.ts",
     output: { filename: "jszipp.writer.umd.js", path: cr86ff68Dist, globalObject: "globalThis", library: umd("JSZippWriter") }
   }

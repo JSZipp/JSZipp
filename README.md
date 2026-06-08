@@ -135,7 +135,9 @@ caps, and reject archives that do not meet the profile.
 - ECMAScript 2019 output
 - Modern browsers with `ReadableStream`, `TransformStream`, `Blob`, and
   `DecompressionStream` for reading deflated entries
-- Intended browser baseline: Chrome 80+ and Firefox 113+ class browsers
+- Default build target: `modern` = Chrome 80+ / Firefox 113+ class browsers
+- Legacy subpath targets: `browser-legacy/cr86ff68` = Chrome 86 / Firefox 68,
+  `browser-legacy/cr61ff58` = Chrome 61 / Firefox 58
 - Node.js can run the tests, but the library is designed for browser APIs
 
 ## Error Messages
@@ -178,6 +180,10 @@ import { ZipWriter, openZip } from "web-jszipp/browser-legacy/cr61ff58";
 import { ZipWriter, openZip } from "web-jszipp/browser-legacy/cr86ff68";
 ```
 
+Use `browser-legacy/cr86ff68` for the Chrome 86 / Firefox 68 family and
+`browser-legacy/cr61ff58` for the Chrome 61 / Firefox 58 family. The default
+`web-jszipp` entry stays on the modern Chrome 80+ / Firefox 113+ floor.
+
 For `browser-legacy/cr61ff58`, the bundle downlevels the library itself and makes
 `readZipStream()` async-iterable on Chrome 61 / Firefox 58. Your application code
 still needs its own old-browser transpilation: raw `for await...of` syntax does not
@@ -203,9 +209,9 @@ If you prefer CDN script tags, use one of the following UMD builds:
 
 <!-- Chrome 86 / Firefox 68 compatible UMD -->
 
-<script src="https://unpkg.com/jszipp/dist/cr86ff68/jszipp.umd.js"></script>
+<script src="https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.umd.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/jszipp/dist/cr86ff68/jszipp.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.umd.js"></script>
 ```
 
 ## Which API Should I Use?

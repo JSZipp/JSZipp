@@ -467,15 +467,48 @@
       </section>
     </main>
 
+    <script src="./common.js"></script>
     <script type="module">
-      // dynamic script url
+      function getJSZippModuleSources(github, bucket) {
+        if (bucket === "modern") {
+          return [
+            !github && "../dist/jszipp.mjs",
+            "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.mjs",
+            "https://unpkg.com/web-jszipp/dist/jszipp.mjs",
+          ];
+        }
+        if (bucket === "cr86ff68") {
+          return [
+            !github && "../dist/cr86ff68/jszipp.mjs",
+            "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.mjs",
+            "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.mjs",
+          ];
+        }
+        if (bucket === "cr61ff58") {
+          return [
+            !github && "../dist/cr61ff58/jszipp.mjs",
+            "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.mjs",
+            "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.mjs",
+          ];
+        }
+        return [];
+      }
+
       async function loadJSZippModule() {
         const github = ["https://jszipp.github.io"].includes(location.origin);
+        const bucket = getBrowserCapabilityBucket();
+        const sources = getJSZippModuleSources(github, bucket);
 
-        return import(
-          github
-            ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.mjs"
-            : "../dist/jszipp.mjs"
+        for (const source of sources) {
+          try {
+            return await import(source);
+          } catch {}
+        }
+
+        throw new Error(
+          bucket === "unsupported"
+            ? "This browser is too old for the JSZipp demo."
+            : "Failed to load a compatible JSZipp demo bundle."
         );
       }
 

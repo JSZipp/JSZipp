@@ -52,6 +52,7 @@ const mkMinimizer = (ecma, unsafeArrows = true) =>
         }
       });
 
+// Modern/default build family: Chrome 80+ / Firefox 113+ class browsers.
 const modernDefines = (namespace = true) => ({
   __DEV__: "false",
   // Older-browser flags OFF: modern builds collapse the polyfill seam to
@@ -112,11 +113,11 @@ const base = {
   resolve: { extensions: [".ts", ".js"] }
 };
 
-// Compat build factory: same as `base` but flips one older-browser flag on (own
-// DefinePlugin) and lowers the JS-syntax target so the bundle parses on the
-// oldest engine in the pair (Chrome 61 ~ ES2017 -> target ES2015; Chrome 86 /
-// Firefox 68 -> ES2019). Runtime Web-API gaps are covered by the bundled
-// polyfill; this only addresses syntax level.
+// Compat build factory: same as `base` but flips one named legacy bucket on
+// (CR61FF58 = Chrome 61 / Firefox 58, CR86FF68 = Chrome 86 / Firefox 68) and
+// lowers the JS-syntax target so the bundle parses on the oldest engine in the
+// pair. Runtime Web-API gaps are covered by the bundled polyfill; this only
+// addresses syntax level.
 const compatBase = (flag, esTarget, ecma, externalHelpers = false) => ({
   ...base,
   target: ["web", esTarget],

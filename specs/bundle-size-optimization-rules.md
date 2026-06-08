@@ -113,6 +113,52 @@ and the minifier won't flip loop direction for you. But:
 - Payoff is tiny (single-digit bytes each). Do it only where it's obviously safe;
   it's not worth a correctness risk.
 
+### 2.5 Separate throw helpers — only for cold paths, only with evidence
+
+Extracting a throw into a tiny helper can reduce bundle size when **all** of the
+following are true:
+
+- The main function is on a **hot path** and the exception path is rare.
+- The inline `throw new ...` would otherwise be duplicated or would keep a long
+  DEV/prod error expression inside the hot function body.
+- The helper is truly tiny: usually one `throw` statement and nothing else.
+
+Example:
+
+```ts
+const encodeValue = (value) => {
+  if (!isEncodable(value)) failEncodeValue();
+  // hot-path work
+};
+const failEncodeValue = (): never => {
+  throw new RangeError(DEV ? "Invalid value" : E_CODE);
+};
+```
+
+This can be a legitimate win because the main helper now contains only:
+
+- one normal fast-path check
+- one cold guard branch
+- one unit of hot-path work
+
+and the larger error construction lives off the hot path.
+
+**Critical evaluation:** this is **not** a general readability or performance
+rule.
+
+- Modern engines already treat a cold conditional `throw` as cold in many cases;
+  moving it out is not automatically faster.
+- A separate helper adds a function symbol/call site, so if the inline throw is
+  used only once and is already short, extraction can be a net loss.
+- gzip already compresses repeated error text well, so the real gain may be
+  smaller than the raw minified-byte delta suggests.
+- Overusing this pattern makes control flow harder to read and turns the codebase
+  into cargo-cult bundle golfing.
+
+**Rule:** JSZipp SHOULD keep a throw helper separate only when measurement on the
+shipped artifact shows a real size win, or when isolating the cold error path
+materially simplifies a demonstrably hot inner loop. Otherwise, inline the throw.
+
 ---
 
 ## 3. The gzip caveat (read before celebrating)

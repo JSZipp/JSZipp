@@ -81,7 +81,7 @@ class FakeZipWorker {
           ...request.options,
           signal: new AbortController().signal,
           onProgress: () => undefined
-        }, request.pathInfo);
+        }, request.path);
         this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
       } catch (error) {
         const err = error as Error;
@@ -116,7 +116,7 @@ class ControlledZipWorker extends FakeZipWorker {
         ...request.options,
         signal: new AbortController().signal,
         onProgress: () => undefined
-      }, request.pathInfo);
+      }, request.path);
       this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
     } catch (error) {
       const err = error as Error;
@@ -133,12 +133,12 @@ class PathChangingZipWorker extends FakeZipWorker {
           ...request.options,
           signal: new AbortController().signal,
           onProgress: () => undefined
-        }, request.pathInfo);
+        }, request.path);
         if (!prepared) throw new Error("worker unexpectedly returned no prepared entry");
         const mutated = {
           ...prepared,
-          path: request.pathInfo.path + ".evil",
-          isDirectory: !request.pathInfo.isDirectory
+          path: request.path + ".evil",
+          isDirectory: !request.path.endsWith("/")
         };
         this.dispatch("message", { data: { id: request.id, prepared: mutated } } as MessageEvent);
       } catch (error) {
@@ -2397,6 +2397,21 @@ describe("openZip", () => {
   });
 
   describe("central directory consistency", () => {
+    it("reads a standard ZIP archive with exactly 65535 entries without requiring ZIP64", async () => {
+      const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
+
+      for (let index = 0; index < 0xffff; index++) writer.writeSync({ path: `f/${index.toString(16).padStart(4, "0")}`, data: "" });
+      const archive = writer.closeSync() as TestBytes;
+
+      expect(hasSignature(archive, 0x06064b50)).toBe(false);
+      expect(hasSignature(archive, 0x07064b50)).toBe(false);
+
+      const reader = await openZip(archive);
+      expect(reader.entries).toHaveLength(0xffff);
+      expect(await reader.get("f/0000")?.text()).toBe("");
+      expect(await reader.get("f/fffe")?.text()).toBe("");
+    }, 30000);
+
     it.concurrent("rejects an EOCD entry count that overstates the directory", async () => {
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
       const eocd = eocdOffset(bytes);
@@ -2810,15 +2825,15 @@ describe("reader integrity checks", () => {
 });
 
 describe("ZIP64 parse errors", () => {
-  it.concurrent("rejects a saturated 32-bit size with no ZIP64 extra to supply it", async () => {
-    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+  it.concurrent("rejects a saturated 32-bit size with no ZIP64 extra when the local header uses a data descriptor", async () => {
+    const bytes = buildDataDescriptorZip([{ path: "a.txt", data: encode("hello"), method: 0 }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
     await expect(openZip(bytes)).rejects.toThrow(/zip64 uncompressed size is missing/i);
   });
 
-  it.concurrent("rejects a ZIP64-signalling EOCD with no locator", async () => {
+  it.concurrent("rejects a ZIP64-signalling EOCD size with no locator", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
-    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint16(realEndOfCentralDirectoryOffset(bytes) + 10, 0xffff, true);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(realEndOfCentralDirectoryOffset(bytes) + 12, 0xffffffff, true);
     await expect(openZip(bytes)).rejects.toThrow(/zip64 locator is missing/i);
   });
 
@@ -2831,7 +2846,7 @@ describe("ZIP64 parse errors", () => {
     await expect(openZip(archive)).rejects.toThrow(/zip64 eocd record is invalid/i);
   });
 
-  it.concurrent("treats a ZIP64 extra whose declared length overruns the field as absent", async () => {
+  it.concurrent("rejects a ZIP64 extra whose declared length overruns the field", async () => {
     const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
     await writer.add({ path: "z.txt", data: "payload" });
     const archive = byteArray(await writer.close());
@@ -2842,6 +2857,36 @@ describe("ZIP64 parse errors", () => {
     expect(view.getUint16(extraStart, true)).toBe(0x0001);
     view.setUint16(extraStart + 2, 0xffff, true);
     await expect(openZip(archive)).rejects.toThrow(/zip64 uncompressed size is missing/i);
+  });
+
+  it.concurrent("interoperability: allows a central-directory uncompressed size of 0xffffffff without ZIP64 extra data", async () => {
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it.concurrent("interoperability: allows a central-directory compressed size of 0xffffffff without ZIP64 extra data", async () => {
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it.skip("interoperability: allows a central-directory local-header offset of 0xffffffff without ZIP64 extra data", async () => {
+    // Companion to yauzl issue #109. A meaningful positive test needs a real
+    // archive whose local header actually starts at offset 0xffffffff, which is
+    // not practical to synthesize in-memory in this suite.
+    const bytes = buildStoredArchive([
+      { path: "pad.bin", data: "pad" },
+      { path: "a.txt", data: "hello" }
+    ]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 42, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
   });
 });
 

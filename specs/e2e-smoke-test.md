@@ -3,9 +3,10 @@
 This file is normative. See [Specification Index](README.md) for repository-wide
 specification scope and keyword meaning.
 
-This bundle adds a real-browser end-to-end smoke test and updates the docs, the
-demo page, and the test scripts to match. Everything here is laid out to mirror
-the repository, so files drop straight into place.
+This spec defines the required real-browser end-to-end smoke-test layer. Current
+file names, scripts, and demo pages mentioned below describe the present
+repository layout; they are examples of how the requirement is currently
+satisfied, not the durable rule by themselves.
 
 ## Why this test
 

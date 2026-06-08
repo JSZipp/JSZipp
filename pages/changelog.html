@@ -32,7 +32,11 @@
           Add future changes here before cutting the next package version.
         </div>
         <ul>
-          <li>No unreleased user-facing changes are documented yet.</li>
+          <li>
+            Fixed ZIP64 reader detection at the 65,535-entry boundary so classic ZIP archives
+            with exactly <code>65,535</code> entries no longer fail with <code>E_ZIP64</code>
+            unless ZIP64 structures are actually present.
+          </li>
         </ul>
 
         <h2>1.0.7 - 2026-06-08</h2>

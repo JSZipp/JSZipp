@@ -41,11 +41,13 @@ describe("package exports", () => {
 
   it("exposes the CommonJS root", () => {
     const root = require("web-jszipp");
+    const workerPlugin = require("web-jszipp/worker-plugin");
 
     expect(root.ZipWriter).toBeTypeOf("function");
     expect(root.ZipTransformStream).toBeTypeOf("function");
     expect(root.openZip).toBeTypeOf("function");
     expect(root.readZipStream).toBeTypeOf("function");
+    expect(workerPlugin.createWorkerBackend).toBeTypeOf("function");
   });
 
   it("emits direct browser-legacy UMD artifacts", () => {
@@ -97,5 +99,17 @@ describe("package exports", () => {
       const source = readFileSync(join("dist", filename), "utf8");
       expect(source).not.toMatch(/\.throwIfAborted\(/);
     }
+  });
+
+  it("keeps UMD globals wired to live public symbols", () => {
+    const reader = readFileSync(join("dist", "jszipp.reader.umd.js"), "utf8");
+    const writer = readFileSync(join("dist", "jszipp.writer.umd.js"), "utf8");
+    const workerPlugin = readFileSync(join("dist", "jszipp.worker-plugin.umd.js"), "utf8");
+
+    expect(reader).toContain("openZip");
+    expect(reader).toContain("readZipStream");
+    expect(writer).toContain("ZipWriter");
+    expect(writer).toContain("ZipTransformStream");
+    expect(workerPlugin).toContain("createWorkerBackend");
   });
 });

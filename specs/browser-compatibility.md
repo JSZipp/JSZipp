@@ -8,11 +8,16 @@ targets exist, what each one is missing, and exactly how the source, the polyfil
 seam, and the build configuration cooperate to cover the gaps **without changing
 the public API**.
 
-Read this before touching anything under `src/polyfill*.ts`, the
-`CR61FF58` / `CR86FF68` build flags, or the syntax targets in
-`rspack.config.mjs`. A change that looks harmless in one build can silently break
-a different one, because each target ships a different mix of native features and
-polyfills.
+The exact private file names and toolchain knobs mentioned below describe the
+current implementation, not the durable requirement by themselves. The normative
+content is the compatibility behavior, coverage model, and build/runtime
+constraints. A refactor may rename modules or move code as long as those
+requirements stay true.
+
+Read this before changing the compatibility seam, the compat build flags, or the
+syntax-lowering configuration. A change that looks harmless in one build can
+silently break a different one, because each target ships a different mix of
+native features and polyfills.
 
 What lives elsewhere (this doc links, it does not duplicate):
 
@@ -46,8 +51,8 @@ is the single most common source of mistakes.
    or by reading globals defensively (feature detection through a safe stand-in).
 
 > Rule of thumb: if the fix is "transpile it differently," it is a **syntax** gap
-> and belongs in `rspack.config.mjs`. If the fix is "provide or detect an API," it
-> is a **runtime** gap and belongs in the polyfill modules.
+> and belongs in the build configuration. If the fix is "provide or detect an
+> API," it is a **runtime** gap and belongs in the polyfill seam.
 
 ---
 
@@ -87,7 +92,7 @@ Notes that matter:
 All Web-API access is routed through a single module boundary so the modern build
 can collapse to native and tree-shake every byte of compat code away.
 
-### 3.1 The four modules
+### 3.1 Current Module Layout
 
 - **`polyfill.ts`** — the native passthrough. Every binding is the platform
   global (`ReadableStream`, `TransformStream`, `AbortController`, …), the member
@@ -112,24 +117,24 @@ can collapse to native and tree-shake every byte of compat code away.
   private key. Reads `AbortController` through the shared `glob` stand-in (not bare
   `globalThis`).
 
-### 3.2 How a build picks one
+### 3.2 How a Build Currently Picks One
 
-`index.ts` imports all three seam modules and selects at runtime with a ternary on
-two build flags:
+The current main runtime module imports all three seam modules and selects at
+runtime with a ternary on two build flags:
 
 ```ts
 const polyfill_ = CR61FF58_ ? polyfillCR61FF58 : CR86FF68_ ? polyfillCR86FF68 : polyfillNative;
 ```
 
 `CR61FF58` and `CR86FF68` are injected as **literal booleans** by
-`rspack.DefinePlugin` (the same mechanism as `__DEV__`). Because the condition is
+the build's constant-injection mechanism. Because the condition is
 a literal, the minifier folds the ternary and **dead-code-eliminates the other
 two seam modules**. In the modern build both flags are `false`, so the ternary
 collapses to `polyfillNative` and *both* compat modules — and everything they
 import — drop out. `package.json` has `"sideEffects": false`, which is what lets
 this elimination actually reach the bundle.
 
-`installPolyfills()` is called once at module load (in `index.ts`) before any
+`installPolyfills()` is called once at module load before any
 export is used. In a compat build it installs `arrayBuffer` / `throwIfAborted` onto
 the real `Blob.prototype` / `AbortSignal.prototype`, but under **private Symbol
 keys**, so native user objects inherit the methods while nothing observable changes
@@ -139,12 +144,12 @@ and ensures it runs before user code. The worker entries must route through this
 same seam too: compat worker-plugin bundles cannot rely on a raw
 `.throwIfAborted()` member call, and compat worker-script bundles cannot construct
 raw `AbortController` directly. Both worker entries share one internal seam module
-(`src/worker-common.ts`) so the build-flag ternary, polyfill bindings, and
-worker-only production error-code strings live in one place.
+so the build-flag ternary, polyfill bindings, and worker-only production
+error-code strings live in one place.
 
 ---
 
-## 4. Build configuration (`rspack.config.mjs`)
+## 4. Build Configuration
 
 ### 4.1 Syntax targets, and the es2017 trap
 
@@ -227,9 +232,9 @@ passes the final URL to the worker factory.
 
 Rules that are easy to break:
 
-- The worker script imports `src/index.ts` internals and must receive the same
-  `CR61FF58` / `CR86FF68` flags as its matching main build.
-- The worker script builds disable `__JSZIPP_NAMESPACE__` so the default
+- The worker script imports main-runtime internals and must receive the same
+  compat flags as its matching main build.
+- The worker script builds disable the default-namespace aggregation flag so the default
   namespace object does not pin unused reader/writer exports.
 - Compat worker scripts are classic workers. Do not document or emit
   `{ type: "module" }` for CR61FF58 or CR86FF68 worker construction.
@@ -457,7 +462,7 @@ worker backend uses. On Firefox 58 that build uses the native `AbortController`,
 and `installPolyfills` attaches the Symbol method to the native
 `AbortSignal.prototype` — so caller-supplied native signals work there too.
 
-**Call sites.** `index.ts` uses `source[arrayBuffer_]()` / `input[arrayBuffer_]()`
+**Call sites.** The main runtime uses `source[arrayBuffer_]()` / `input[arrayBuffer_]()`
 and `signal?.[throwIfAborted_]()`. The `instanceof Blob` **detection** stays on the
 global `Blob` (a user Blob is a native Blob). Because the keys come from the seam,
 the existing `CR61FF58` / `CR86FF68` build flags already determine string-vs-Symbol
@@ -531,7 +536,7 @@ break a real legacy browser, because the tests run the **source** (native seam),
 not the transpiled legacy bundle.
 
 1. **Modern build stays native and dependency-free.** Never import a runtime
-   dependency into `index.ts` / `polyfill.ts`, and never make `polyfill.ts`
+   dependency into the main runtime or the native seam module, and never make the native seam
    anything other than a native passthrough. The 70 KB `web-streams-polyfill`
    removal must not creep back in.
 2. **Route Web-API access through the seam.** New use of a stream / abort /
@@ -561,11 +566,11 @@ not the transpiled legacy bundle.
    the native string name — so the observable global surface (and other libraries'
    feature detection) is unchanged. `installPolyfills()` runs once at load; keep the
    call so it is not tree-shaken (§5.7).
-9. **Keep worker-entry internals shared.** `src/worker-plugin.ts` and
-   `src/worker-script.ts` must import their build-flag selection, polyfill seam,
-   and worker-only production error-code strings from the same internal helper
-   (`src/worker-common.ts`), not redefine parallel copies. This avoids the worker
-   entries drifting in compat behavior or compressed error vocabulary.
+9. **Keep worker-entry internals shared.** The page-side worker plugin entry and
+   the worker-side script entry must import their build-flag selection,
+   polyfill seam, and worker-only production error-code strings from the same
+   internal helper, not redefine parallel copies. This avoids the worker entries
+   drifting in compat behavior or compressed error vocabulary.
 10. **Preserve the public API and error categories across all builds.** Adding a
    compat measure must never remove or alter a feature, an exported name, or an
    exception class / DOMException name (`api-contract.md`).
@@ -692,7 +697,7 @@ output.
 3. Add a `DefinePlugin` flag and a thin `polyfill-<TARGET>.ts` entry that
    re-exports `polyfill-compat.ts` and supplies only the deltas unique to the
    pair (as `polyfill-CR61FF58.ts` supplies its AbortController poly).
-4. Wire the flag into the `index.ts` selection ternary and the worker-script
+4. Wire the flag into the main-runtime seam-selection logic and the worker-script
    build for that target.
 5. Add matching `worker-plugin` and worker-script outputs, plus package export
    subpaths if the target is public.

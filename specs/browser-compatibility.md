@@ -187,7 +187,7 @@ minimizer is therefore created with `unsafe_arrows: false`
 (`mkMinimizer(ecma, false)`). The modern build keeps it on (object spread is
 native there). Do not "simplify" this to one shared minimizer.
 
-### 4.3 `output.globalObject` for the UMD wrappers
+### 4.3 UMD output shape
 
 The UMD wrapper itself needs a global object to attach the library to. Setting
 `output.globalObject: "globalThis"` makes rspack emit `globalThis` **in the
@@ -199,6 +199,33 @@ globalObject: "typeof self !== 'undefined' ? self : this"
 ```
 
 CR86FF68 and modern engines have `globalThis`, so their wrappers may keep it.
+
+UMD output must also preserve the intended public global shape without forcing
+module consumers to carry aggregate default objects. Split runtime entries
+(`reader`, `writer`, and `worker-plugin`) should stay named-export-only unless a
+different public contract explicitly requires a default export.
+
+For a UMD global that should expose those named exports as properties, omit
+`output.library.export`:
+
+```js
+library: { name: "JSZippReader", type: "umd" }
+```
+
+This lets the UMD global be the entry namespace, for example:
+
+```js
+globalThis.JSZippReader.openZip
+globalThis.JSZippReader.readZipStream
+```
+
+Do not add a `default` export or a dedicated `*-umd.ts` wrapper merely to build
+that namespace shape. Use `library.export: "default"` only when the entry
+intentionally exports a default value and the UMD artifact is supposed to expose
+that default value itself.
+
+The required proof is a runtime smoke test that evaluates the built UMD files and
+asserts the global properties, not only a text search for symbol names.
 
 ### 4.4 Worker plugin and worker script outputs
 

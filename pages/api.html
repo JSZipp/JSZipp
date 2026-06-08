@@ -330,7 +330,13 @@ await writer.add({ path: "huge.log", data: log, level: 9 });        // override 
               When ZIP64 is emitted, only the saturated 32-bit slots are carried in the extra field:
               the local header holds the uncompressed and compressed sizes (16 data bytes); the
               Central Directory header additionally carries the local-header offset (24 data bytes).
-              64-bit values beyond <code>Number.MAX_SAFE_INTEGER</code> are rejected.
+            </p>
+            <p>
+              JSZipp supports ZIP64 archives up to JavaScript's safe integer range: roughly
+              <strong>9 petabytes</strong> for any single ZIP64 size, offset, or directory-size
+              value. ZIP files can theoretically store larger 64-bit values, but JavaScript cannot
+              represent those byte positions exactly as normal numbers. JSZipp rejects such archives
+              instead of reading from a rounded offset or reporting an unsafe size.
             </p>
           </div>
         </details>

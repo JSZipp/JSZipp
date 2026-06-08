@@ -60,8 +60,10 @@ export interface ZipWorkerBackendOptions {
    *
    * Defaults to `true`. Set to `false` when worker usage is required and any
    * worker failure should reject the write. Requests sent with
-   * `transfer: "transfer"` cannot fall back after the worker takes ownership
-   * of the source buffer.
+   * `transfer: "transfer"` can still fall back for inputs whose caller-owned
+   * bytes were not transferred (for example strings, Blobs, or partial
+   * `Uint8Array` views). Fallback is unavailable only after the worker takes
+   * ownership of the original caller-owned source buffer.
    */
   fallback?: boolean;
   /**
@@ -101,6 +103,10 @@ type Pending = {
   reject: (error: unknown) => void;
   abort: () => void;
   canFallback: boolean;
+};
+type TransferCloneResult = {
+  input: ZipInputEntry;
+  transferredCallerOwnedBuffer: boolean;
 };
 type WorkerResponse = {
   id: number;
@@ -154,28 +160,35 @@ const serializableOptions = (options: ZipEncoderRuntimeOptions): Omit<ZipEncoder
   explicitDirectoryEntries: options.explicitDirectoryEntries
 });
 
-const cloneForTransfer = (entry: ZipInputEntry, transferMode: ZipWorkerTransferMode, transfer: Transferable[]): ZipInputEntry => {
+const cloneForTransfer = (entry: ZipInputEntry, transferMode: ZipWorkerTransferMode, transfer: Transferable[]): TransferCloneResult => {
   const { data } = entry;
   if (data instanceof ArrayBuffer) {
-    if (transferMode === "transfer") transfer.push(data);
-    return entry;
+    if (transferMode === "transfer") {
+      transfer.push(data);
+      return { input: entry, transferredCallerOwnedBuffer: true };
+    }
+    return { input: entry, transferredCallerOwnedBuffer: false };
   }
   if (data instanceof Uint8Array) {
     if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
-      if (transferMode === "transfer") transfer.push(data.buffer);
-      return entry;
+      if (transferMode === "transfer") {
+        transfer.push(data.buffer);
+        return { input: entry, transferredCallerOwnedBuffer: true };
+      }
+      return { input: entry, transferredCallerOwnedBuffer: false };
     }
-    if (transferMode === "copy") return entry;
+    if (transferMode === "copy") return { input: entry, transferredCallerOwnedBuffer: false };
     const copy = new Uint8Array(data);
     transfer.push(copy.buffer);
-    return { ...entry, data: copy };
+    return { input: { ...entry, data: copy }, transferredCallerOwnedBuffer: false };
   }
-  return entry;
+  return { input: entry, transferredCallerOwnedBuffer: false };
 };
 
 class ZipWorkerClient implements ZipWorkerBackendHandle {
   private worker?: Worker;
   private removeWorkerListeners?: () => void;
+  private restorePatchedTerminate?: () => void;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private readonly instanceBacked: boolean;
@@ -202,7 +215,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
 
     const id = this.nextId++;
     const transfer: Transferable[] = [];
-    const requestInput = cloneForTransfer(input, this.transferMode, transfer);
+    const { input: requestInput, transferredCallerOwnedBuffer } = cloneForTransfer(input, this.transferMode, transfer);
 
     return new Promise<ZipPreparedEntry | undefined>((resolve, reject) => {
       const cleanup = (): void => {
@@ -225,7 +238,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
           reject(error);
         },
         abort,
-        canFallback: this.fallback && this.transferMode !== "transfer"
+        canFallback: this.fallback && !transferredCallerOwnedBuffer
       });
       if (canListenForAbort(options.signal)) options.signal.addEventListener("abort", abort, { once: true });
       if (options.signal.aborted) {
@@ -267,6 +280,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
   }
 
   private attachWorkerListeners(worker: Worker): void {
+    this.patchWorkerTerminate(worker);
     const onMessage = (event: MessageEvent<WorkerResponse>): void => {
       const pending = this.pending.get(event.data.id);
       if (!pending) return;
@@ -303,6 +317,31 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     };
   }
 
+  private patchWorkerTerminate(worker: Worker): void {
+    if (!this.instanceBacked) return;
+    const originalTerminate = worker.terminate;
+    if (typeof originalTerminate !== "function") return;
+    const backend = this;
+    let active = true;
+    const patchedTerminate = function(this: Worker): void {
+      originalTerminate.call(this);
+      if (!active) return;
+      active = false;
+      if (backend.worker === worker) backend.onExternalTerminate();
+    };
+    worker.terminate = patchedTerminate;
+    this.restorePatchedTerminate = () => {
+      if (!active) return;
+      active = false;
+      if (worker.terminate === patchedTerminate) worker.terminate = originalTerminate;
+    };
+  }
+
+  private onExternalTerminate(): void {
+    this.rejectPending(terminatedError());
+    this.disposeWorker(true, true);
+  }
+
   private failWorker(error: unknown): void {
     const pending = [...this.pending.values()];
     this.pending.clear();
@@ -314,11 +353,14 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     this.disposeWorker(this.instanceBacked);
   }
 
-  private disposeWorker(retireInstance: boolean): void {
+  private disposeWorker(retireInstance: boolean, workerAlreadyTerminated = false): void {
+    const worker = this.worker;
+    this.restorePatchedTerminate?.();
+    this.restorePatchedTerminate = undefined;
     this.removeWorkerListeners?.();
     this.removeWorkerListeners = undefined;
-    this.worker?.terminate();
     this.worker = undefined;
+    if (!workerAlreadyTerminated) worker?.terminate();
     if (retireInstance) this.instanceTerminated = true;
   }
 

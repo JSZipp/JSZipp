@@ -464,6 +464,13 @@ try {
               <code>fallback: false</code> requires worker preparation.
             </p>
             <p>
+              JSZipp treats an instance-backed worker as dedicated to that backend and wraps its
+              <code>terminate()</code> method. Calling either <code>backend.terminate()</code> or
+              the raw <code>worker.terminate()</code> retires the backend and rejects any in-flight
+              worker requests instead of leaving them pending forever. Prefer the backend method so
+              ownership stays obvious in your application code.
+            </p>
+            <p>
               The modern ESM build uses <code>web-jszipp/worker-plugin</code> with
               <code>dist/jszipp.worker.mjs</code> as a module worker. The modern UMD build can
               load <code>dist/jszipp.worker-plugin.umd.js</code> and
@@ -496,6 +503,15 @@ try {
               buffer without also transferring unrelated bytes outside the view. In that case, both
               <code>"auto"</code> and <code>"transfer"</code> create a tight copy for the visible
               slice and transfer that copy instead.
+            </p>
+            <p>
+              Fallback after a worker failure is decided per request based on whether the worker
+              actually took ownership of caller-owned bytes. So even in
+              <code>transfer: "transfer"</code> mode, <code>string</code>, <code>Blob</code>, and
+              partial <code>Uint8Array</code> inputs can still fall back locally because the
+              original caller data remains usable. Requests whose original
+              <code>ArrayBuffer</code> or full-span <code>Uint8Array</code> was transferred cannot
+              safely fall back because that buffer may already be detached.
             </p>
             <p>
               Use <code>"copy"</code> when the caller still needs the original bytes after

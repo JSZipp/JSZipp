@@ -492,10 +492,19 @@ cancel unrelated in-flight writes using the same worker.
 
 If a worker request fails after the worker was created, `fallback: true` still
 tries to continue locally for requests whose source data remains usable in the
-main thread. The main exception is `transfer: "transfer"`: if ownership of an
-`ArrayBuffer` or full-span `Uint8Array` was transferred to the worker, that
-request rejects on worker failure because the caller buffer may already be
-detached.
+main thread. That decision is per request, not just per backend mode. Even with
+`transfer: "transfer"`, fallback still works for `string`, `Blob`, and partial
+`Uint8Array` views because JSZipp does not transfer the caller-owned bytes in
+those cases. The non-fallback case is when the worker took ownership of the
+original caller-owned `ArrayBuffer` or full-span `Uint8Array`, because that
+buffer may already be detached on worker failure.
+
+If you pass a plain `Worker` instance, JSZipp treats it as dedicated to that
+backend and patches its `terminate()` method. Calling either
+`backend.terminate()` or `worker.terminate()` retires the backend and rejects
+any in-flight worker requests instead of leaving them pending forever. Prefer
+`backend.terminate()` when your app is done with the backend so the ownership is
+obvious at the call site.
 
 Prepared entries returned by a worker backend are trusted by the writer. The
 bundled worker script is intended for that role; custom `ZipWorkerBackend`

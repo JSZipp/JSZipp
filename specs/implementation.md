@@ -169,7 +169,9 @@ const worker = createWorkerBackend({
 `workerSource` also accepts a plain `Worker` instance. That form is valid when
 the caller wants to own one specific pre-created worker, but it gives up lazy
 construction and automatic recreation after that instance is terminated or
-fails.
+fails. JSZipp treats an instance-backed worker as dedicated to that backend and
+wraps `worker.terminate()` so a direct termination retires the backend and
+rejects in-flight worker requests instead of leaving them pending.
 
 The worker script must match the main build:
 

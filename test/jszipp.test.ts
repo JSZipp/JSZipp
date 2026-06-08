@@ -941,6 +941,32 @@ describe("ZipWriter", () => {
     }
   });
 
+  it("worker backend still falls back in transfer mode when the caller-owned bytes were not transferred", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = ErroringZipWorker;
+    const backend = createWorkerBackend({
+      workerSource: () => new ErroringZipWorker() as unknown as Worker,
+      minSize: 0,
+      transfer: "transfer"
+    });
+    try {
+      const partialView = new Uint8Array(new ArrayBuffer(8192), 1024, 4096);
+      partialView.fill(0x61);
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await writer.add({ path: "partial.bin", data: partialView });
+      await writer.add({ path: "text.txt", data: "fallback".repeat(1000) });
+      const archive = await writer.close();
+      const reader = await openZip(archive);
+
+      expectBytesEqual(byteArray(await reader.get("partial.bin")!.arrayBuffer()), partialView);
+      expect(await reader.get("text.txt")?.text()).toBe("fallback".repeat(1000));
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
   it("worker backend rejects after worker errors when transfer mode detached the input", async () => {
     const originalWorker = (globalThis as any).Worker;
     (globalThis as any).Worker = ErroringZipWorker;
@@ -966,6 +992,26 @@ describe("ZipWriter", () => {
     try {
       const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
       await expect(writer.add({ path: "bad-response.txt", data: "x".repeat(1000) })).rejects.toThrow(/deserialized|worker/i);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("instance-backed worker termination rejects pending writes instead of hanging", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = ControlledZipWorker;
+    const worker = new ControlledZipWorker() as unknown as Worker;
+    const backend = createWorkerBackend({ workerSource: worker, fallback: false, minSize: 0 });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      const pendingAdd = writer.add({ path: "owned-worker.txt", data: "owned".repeat(1000) });
+
+      worker.terminate();
+
+      await expect(pendingAdd).rejects.toThrow(/terminated/i);
+      await expect(writer.add({ path: "after-terminate.txt", data: "after".repeat(1000) })).rejects.toThrow(DOMException);
     } finally {
       backend.terminate();
       if (originalWorker === undefined) delete (globalThis as any).Worker;

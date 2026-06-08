@@ -38,131 +38,184 @@
         <h2>1.0.7 - 2026-06-08</h2>
         <div class="callout">
           <strong>Current package version.</strong>
-          This release adds an opt-in Web Worker writer backend, ships worker plugin and worker
-          script subpaths for modern and legacy browser builds, expands migration and API docs, and
-          consolidates the repository's normative documentation under <code>specs/</code>.
+          This release adds an opt-in Web Worker backend for async ZIP writing, publishes
+          worker plugin and worker script entry points for modern and legacy builds, expands
+          worker/API documentation and demos, and consolidates normative repository
+          documentation under <code>specs/</code>.
         </div>
 
         <h3>Added</h3>
         <ul>
           <li>
             Added opt-in worker-backed async entry preparation for
-            <code>ZipWriter.add()</code> through <code>createWorkerBackend()</code> in the new
-            <code>web-jszipp/worker-plugin</code> subpath.
+            <code>ZipWriter.add()</code> through <code>createWorkerBackend()</code> in the
+            new <code>web-jszipp/worker-plugin</code> package subpath.
           </li>
           <li>
-            Added worker-backend controls for lazy worker construction, optional local fallback,
-            byte transfer strategy (<code>"copy"</code>, <code>"auto"</code>,
-            <code>"transfer"</code>), and a <code>minSize</code> threshold before async entries
-            are offloaded.
+            Added public worker-related types:
+            <code>ZipWorkerBackend</code>, <code>ZipPreparedEntry</code>, and
+            <code>ZipEncoderRuntimeOptions</code>.
           </li>
           <li>
-            Added worker script package subpaths so applications can host static worker files under
-            their own CSP and extension rules: <code>web-jszipp/worker-script</code> plus matching
-            <code>browser-legacy/cr61ff58</code> and <code>browser-legacy/cr86ff68</code> worker
-            plugin and worker script subpaths.
+            Added worker backend controls for lazy worker construction, optional local
+            fallback, byte transfer strategy (<code>"copy"</code>, <code>"auto"</code>,
+            <code>"transfer"</code>), and a <code>minSize</code> threshold before async
+            entries are offloaded.
           </li>
           <li>
-            Added the dedicated worker preparation runtime and packaging outputs for modern module
-            workers and legacy classic workers.
+            Added static worker script package subpaths so applications can host worker
+            files under their own CSP and extension rules:
+            <code>web-jszipp/worker-script</code>, plus matching
+            <code>browser-legacy/cr61ff58</code> and
+            <code>browser-legacy/cr86ff68</code> worker plugin and worker script subpaths.
           </li>
           <li>
-            Added export coverage for the new worker plugin and worker script package subpaths
-            across ESM, CommonJS, UMD, and both legacy browser build families.
+            Added modern and legacy worker plugin bundles and worker scripts:
+            <code>jszipp.worker-plugin.mjs</code>, <code>jszipp.worker-plugin.cjs</code>,
+            <code>jszipp.worker-plugin.umd.js</code>, <code>jszipp.worker.mjs</code>,
+            <code>jszipp.worker.js</code>, and the matching <code>cr61ff58</code> /
+            <code>cr86ff68</code> worker artifacts.
           </li>
           <li>
-            Added a worker-compression demo page that visualizes main-thread stalls while comparing
-            JSZipp's normal writer path, JSZipp worker-backed writing, <code>fflate</code>, and
-            native compression primitives.
+            Added shared worker plumbing in <code>src/worker-common.ts</code>,
+            <code>src/worker-plugin.ts</code>, and <code>src/worker-script.ts</code>.
           </li>
           <li>
-            Added worker-backend regression coverage for byte-identical output, sync-path isolation,
-            backend reuse, fallback behavior, UTF-8 <code>minSize</code> handling, abort isolation,
-            and package export validation.
+            Added a worker compression demo page that visualizes main-thread stalls while
+            comparing JSZipp's normal writer path, JSZipp worker-backed writing,
+            <code>fflate</code>, and native browser compression primitives.
           </li>
           <li>
-            Added a Playwright browser smoke test that imports the built worker plugin, constructs
-            a real module worker from <code>dist/jszipp.worker.mjs</code>, writes an archive, and
-            validates the result with an independent ZIP reader.
+            Added demo navigation links so the compressor, full browser lab, benchmark, and
+            worker demo pages cross-link consistently.
           </li>
           <li>
-            Added <code>specs/README.md</code> to define the repository's normative specification
-            set.
+            Added worker backend regression coverage for byte-identical output, synchronous
+            path isolation, backend reuse, instance-backed termination behavior, local
+            fallback behavior, transfer-mode fallback limits, message error handling,
+            UTF-8 <code>minSize</code> handling, abort isolation, and poll-only signal
+            compatibility.
+          </li>
+          <li>
+            Added package export tests for worker plugin subpaths, worker script subpaths,
+            emitted worker artifacts, compat worker plugin output, and UMD reader/writer
+            size expectations.
+          </li>
+          <li>
+            Added a Playwright browser smoke test that imports the built worker plugin,
+            constructs a real module worker from <code>dist/jszipp.worker.mjs</code>,
+            writes an archive, and validates the result with an independent ZIP reader.
+          </li>
+          <li>
+            Added <code>specs/README.md</code> to define the repository's normative
+            specification set.
           </li>
         </ul>
 
         <h3>Changed</h3>
         <ul>
           <li>
-            Kept the default <code>web-jszipp</code> import worker-free. Worker writing is now an
-            explicit opt-in on <code>ZipWriter</code> through the <code>worker</code> option.
+            Kept the default <code>web-jszipp</code> import worker-free. Worker writing is
+            now an explicit opt-in on <code>ZipWriter</code> through the
+            <code>worker</code> option.
           </li>
           <li>
-            Extended the public writer configuration surface with the shared
-            <code>ZipWorkerBackend</code> option while keeping synchronous writer methods on the
-            original local code path.
+            Extended the shared encoder configuration with the optional
+            <code>worker</code> backend while keeping <code>writeSync()</code> and
+            <code>closeSync()</code> on the original local synchronous path.
           </li>
           <li>
-            Expanded the API reference, installation guide, examples page, and README with worker
-            plugin usage, worker-source lifecycle guidance, transfer-mode behavior, size-threshold
-            tuning, and compat-build examples.
+            Changed prepared-entry bookkeeping to store <code>sourceSize</code> instead of
+            retaining the original uncompressed source bytes after compression, reducing what
+            worker-prepared entries need to return to the writer.
           </li>
           <li>
-            Corrected worker-script documentation to use the actual emitted classic-worker
-            filenames <code>jszipp.worker.js</code>,
-            <code>cr61ff58/jszipp.worker.js</code>, and
-            <code>cr86ff68/jszipp.worker.js</code>.
+            Updated build configuration to emit modern worker plugin/module-worker outputs,
+            modern classic worker outputs, and matching CR61FF58 / CR86FF68 compat worker
+            plugin and classic worker outputs.
           </li>
           <li>
-            Reworked the upgrade guide into a full JSZip-to-JSZipp migration reference covering
-            architecture differences, dealbreakers, translation examples, safer reader defaults,
-            ZIP64 behavior, and decision guidance.
+            Added build-time namespace pruning so reader-only and writer-only UMD sub-entry
+            bundles do not keep the full default namespace alive.
           </li>
           <li>
-            Replaced the standalone migration document with the expanded upgrade guide and updated
-            site navigation and cross-links to point at the new <code>specs/</code> locations.
+            Expanded the README, API reference, installation guide, examples page, and
+            upgrade guide with worker plugin usage, worker-source lifecycle guidance,
+            transfer-mode behavior, size-threshold tuning, compat-build examples, and
+            Chrome 61 application-transpilation notes.
           </li>
           <li>
-            Moved the repository's behavioral and maintenance documents from scattered
-            <code>docs/</code> locations into the unified <code>specs/</code> tree and updated
-            documentation links accordingly.
+            Reworked the upgrade guide into a fuller JSZip-to-JSZipp migration reference
+            covering API shape differences, migration dealbreakers, translation examples,
+            safer reader defaults, ZIP64 behavior, and decision guidance.
+          </li>
+          <li>
+            Moved the repository's behavioral, compatibility, implementation, testing,
+            metadata, charset, timezone, streaming, memory, and maintenance documents into
+            the unified <code>specs/</code> tree and updated public cross-links.
+          </li>
+          <li>
+            Replaced the deleted standalone <code>docs/migrate-from-jszip.md</code> page
+            with the expanded site upgrade guide.
+          </li>
+          <li>
+            Updated type declaration generation to include the worker plugin entry point
+            while stripping internal declarations from published types.
           </li>
         </ul>
 
         <h3>Fixed</h3>
         <ul>
           <li>
-            Preserved older-browser compatibility for the worker plugin builds by validating the
-            compat outputs and avoiding direct <code>AbortSignal.throwIfAborted()</code> calls in
-            generated legacy worker-plugin bundles.
+            Hardened <code>ZipWriter</code>'s worker backend integration by rejecting
+            prepared entries whose returned <code>path</code> or
+            <code>isDirectory</code> does not match the writer's already-reserved entry.
           </li>
           <li>
-            Ensured worker-prepared async entries produce the same ZIP bytes as the normal in-thread
-            writer path for the same inputs and metadata.
+            Ensured worker-prepared async entries produce the same ZIP bytes as the normal
+            in-thread writer path for the same inputs and metadata.
           </li>
           <li>
-            Fixed the public TypeScript shape of
-            <code>createWorkerBackend()</code> so the deprecated
-            <code>worker</code> alias for <code>workerSource</code> still compiles for TS
-            consumers while the runtime migration path remains unchanged.
+            Preserved older-browser worker plugin compatibility by routing worker entries
+            through the shared polyfill seam instead of relying on direct
+            <code>throwIfAborted()</code> calls in compat outputs.
           </li>
           <li>
-            Hardened <code>ZipWriter</code>'s worker backend integration by rejecting prepared
-            entries whose returned <code>path</code> or <code>isDirectory</code> does not match
-            the writer's already-reserved entry path, preventing custom or buggy backends from
-            bypassing duplicate-path and entry-kind invariants.
+            Extended the CR61FF58 abort polyfill with the small abort-listener subset needed
+            by worker request cancellation.
+          </li>
+          <li>
+            Kept the deprecated <code>worker</code> alias for
+            <code>workerSource</code> accepted by <code>createWorkerBackend()</code> so
+            existing callers can migrate without an immediate compile break.
+          </li>
+          <li>
+            Corrected public documentation and examples to use the actual emitted classic
+            worker filenames: <code>jszipp.worker.js</code>,
+            <code>cr61ff58/jszipp.worker.js</code>, and
+            <code>cr86ff68/jszipp.worker.js</code>.
           </li>
         </ul>
 
         <h3>Compatibility</h3>
         <ul>
           <li>
-            Preserved the public writer and reader API across the default modern build and both
-            legacy browser targets while adding parallel worker plugin entry points.
+            Preserved the existing root reader/writer API while adding separate worker
+            plugin and worker script entry points for applications that opt in.
           </li>
           <li>
-            Kept synchronous <code>writeSync()</code> and <code>closeSync()</code> local-only; they
-            do not depend on worker availability and do not route through the worker backend.
+            Preserved modern, CR61FF58, and CR86FF68 package/build coverage for the main
+            library while adding parallel worker plugin artifacts for each build family.
+          </li>
+          <li>
+            Kept synchronous <code>writeSync()</code> and <code>closeSync()</code>
+            local-only; they do not depend on worker availability and do not route through
+            the worker backend.
+          </li>
+          <li>
+            Compat worker scripts are classic worker scripts. Do not pass
+            <code>{ type: "module" }</code> when constructing CR61FF58 or CR86FF68
+            workers.
           </li>
         </ul>
 

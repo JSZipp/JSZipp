@@ -476,8 +476,10 @@ Use the factory form in most cases:
   the normal in-thread path
 
 Passing a plain `Worker` instance is still valid when your app wants to create
-and own one specific worker up front, but that instance cannot be recreated by
-the backend after it is terminated or fails. After `terminate()` on an
+and own one specific worker up front. JSZipp treats that worker as dedicated to
+the backend: it attaches event listeners to it and retires the backend if that
+worker is terminated or crashes, because an instance-backed backend cannot
+create a replacement. After `terminate()` or a worker failure on an
 instance-backed backend, future async writes use the normal in-thread path when
 `fallback` is enabled, or reject with `InvalidStateError` / `E_TERMINATED` when
 `fallback: false` requires worker preparation.
@@ -487,6 +489,13 @@ writer unless `fallback: false` is set. `writeSync()` and `closeSync()` do not
 use the backend and remain local synchronous operations. Aborting one write
 rejects only that write; it does not automatically terminate a shared backend or
 cancel unrelated in-flight writes using the same worker.
+
+If a worker request fails after the worker was created, `fallback: true` still
+tries to continue locally for requests whose source data remains usable in the
+main thread. The main exception is `transfer: "transfer"`: if ownership of an
+`ArrayBuffer` or full-span `Uint8Array` was transferred to the worker, that
+request rejects on worker failure because the caller buffer may already be
+detached.
 
 Prepared entries returned by a worker backend are trusted by the writer. The
 bundled worker script is intended for that role; custom `ZipWorkerBackend`

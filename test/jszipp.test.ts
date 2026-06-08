@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
 import JSZipp, { __privatePrepareEntryForWorker, ZipTransformStream, ZipWriter, openZip, readZipStream, TimestampMode, type ZipReadOptions, type ZipStreamEntry } from "../src/index";
@@ -46,10 +46,31 @@ class FakeZipWorker {
   static calls = 0;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent) => void) | null = null;
+  private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   private terminated = false;
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    (this.listeners.get(type) ?? this.listeners.set(type, new Set()).get(type)!).add(listener);
+  }
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    this.listeners.get(type)?.delete(listener);
+  }
 
   terminate(): void {
     this.terminated = true;
+  }
+
+  protected dispatch(type: "message" | "error" | "messageerror", event: Event): void {
+    if (this.terminated) return;
+    this.listeners.get(type)?.forEach((listener) => {
+      if (typeof listener === "function") listener(event);
+      else listener.handleEvent(event);
+    });
+    if (type === "message") this.onmessage?.(event as MessageEvent);
+    else if (type === "error") this.onerror?.(event as ErrorEvent);
+    else this.onmessageerror?.(event as MessageEvent);
   }
 
   postMessage(request: any): void {
@@ -61,23 +82,20 @@ class FakeZipWorker {
           signal: new AbortController().signal,
           onProgress: () => undefined
         }, request.pathInfo);
-        if (!this.terminated) this.onmessage?.({ data: { id: request.id, prepared } } as MessageEvent);
+        this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
       } catch (error) {
         const err = error as Error;
-        if (!this.terminated) this.onmessage?.({ data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
+        this.dispatch("message", { data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
       }
     })();
   }
 }
 
-class ControlledZipWorker {
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((event: ErrorEvent) => void) | null = null;
-  private terminated = false;
+class ControlledZipWorker extends FakeZipWorker {
   private readonly requests = new Map<number, any>();
 
-  terminate(): void {
-    this.terminated = true;
+  override terminate(): void {
+    super.terminate();
     this.requests.clear();
   }
 
@@ -99,23 +117,15 @@ class ControlledZipWorker {
         signal: new AbortController().signal,
         onProgress: () => undefined
       }, request.pathInfo);
-      if (!this.terminated) this.onmessage?.({ data: { id: request.id, prepared } } as MessageEvent);
+      this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
     } catch (error) {
       const err = error as Error;
-      if (!this.terminated) this.onmessage?.({ data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
+      this.dispatch("message", { data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
     }
   }
 }
 
-class PathChangingZipWorker {
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((event: ErrorEvent) => void) | null = null;
-  private terminated = false;
-
-  terminate(): void {
-    this.terminated = true;
-  }
-
+class PathChangingZipWorker extends FakeZipWorker {
   postMessage(request: any): void {
     void (async () => {
       try {
@@ -130,12 +140,24 @@ class PathChangingZipWorker {
           path: request.pathInfo.path + ".evil",
           isDirectory: !request.pathInfo.isDirectory
         };
-        if (!this.terminated) this.onmessage?.({ data: { id: request.id, prepared: mutated } } as MessageEvent);
+        this.dispatch("message", { data: { id: request.id, prepared: mutated } } as MessageEvent);
       } catch (error) {
         const err = error as Error;
-        if (!this.terminated) this.onmessage?.({ data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
+        this.dispatch("message", { data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
       }
     })();
+  }
+}
+
+class ErroringZipWorker extends FakeZipWorker {
+  override postMessage(): void {
+    queueMicrotask(() => this.dispatch("error", { message: "simulated worker crash" } as ErrorEvent));
+  }
+}
+
+class MessageErrorZipWorker extends FakeZipWorker {
+  override postMessage(): void {
+    queueMicrotask(() => this.dispatch("messageerror", {} as MessageEvent));
   }
 }
 
@@ -901,6 +923,82 @@ describe("ZipWriter", () => {
       fallbackBackend.terminate();
       requiredBackend.terminate();
       if (originalWorker !== undefined) (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("worker backend falls back locally after worker errors when source data remains local", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = ErroringZipWorker;
+    const backend = createWorkerBackend({ workerSource: () => new ErroringZipWorker() as unknown as Worker, minSize: 0 });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await writer.add({ path: "fallback-after-error.txt", data: "fallback".repeat(1000) });
+      expect(await (await openZip(await writer.close())).get("fallback-after-error.txt")?.text()).toBe("fallback".repeat(1000));
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("worker backend rejects after worker errors when transfer mode detached the input", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = ErroringZipWorker;
+    const backend = createWorkerBackend({
+      workerSource: () => new ErroringZipWorker() as unknown as Worker,
+      minSize: 0,
+      transfer: "transfer"
+    });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await expect(writer.add({ path: "detached.bin", data: new Uint8Array(4096) })).rejects.toThrow(/worker/i);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("worker backend rejects pending writes on messageerror instead of hanging", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = MessageErrorZipWorker;
+    const backend = createWorkerBackend({ workerSource: () => new MessageErrorZipWorker() as unknown as Worker, fallback: false, minSize: 0 });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await expect(writer.add({ path: "bad-response.txt", data: "x".repeat(1000) })).rejects.toThrow(/deserialized|worker/i);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("instance-backed workers keep caller-owned handler properties intact", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = FakeZipWorker;
+    FakeZipWorker.calls = 0;
+    const worker = new FakeZipWorker() as unknown as Worker & {
+      onmessage: ((event: MessageEvent) => void) | null;
+      onerror: ((event: ErrorEvent) => void) | null;
+    };
+    const existingMessage = vi.fn();
+    const existingError = vi.fn();
+    worker.onmessage = existingMessage;
+    worker.onerror = existingError;
+    const backend = createWorkerBackend({ workerSource: worker, fallback: false, minSize: 0 });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await writer.add({ path: "owned-worker.txt", data: "owned".repeat(1000) });
+      await writer.close();
+
+      expect(worker.onmessage).toBe(existingMessage);
+      expect(worker.onerror).toBe(existingError);
+      expect(existingMessage).toHaveBeenCalled();
+      expect(existingError).not.toHaveBeenCalled();
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
     }
   });
 

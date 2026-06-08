@@ -55,10 +55,13 @@ export interface ZipWorkerBackendOptions {
   worker?: ZipWorkerFactory;
   /**
    * Whether to fall back to JSZipp's normal in-thread preparation when the
-   * worker path is unavailable or cannot clone an input.
+   * worker path is unavailable, a request cannot be cloned/sent, or a worker
+   * request fails while the source data is still usable locally.
    *
-   * Defaults to `true`. Set to `false` when worker usage is required and a
-   * failure should reject the write.
+   * Defaults to `true`. Set to `false` when worker usage is required and any
+   * worker failure should reject the write. Requests sent with
+   * `transfer: "transfer"` cannot fall back after the worker takes ownership
+   * of the source buffer.
    */
   fallback?: boolean;
   /**
@@ -97,6 +100,7 @@ type Pending = {
   resolve: (prepared: ZipPreparedEntry | undefined) => void;
   reject: (error: unknown) => void;
   abort: () => void;
+  canFallback: boolean;
 };
 type WorkerResponse = {
   id: number;
@@ -171,6 +175,7 @@ const cloneForTransfer = (entry: ZipInputEntry, transferMode: ZipWorkerTransferM
 
 class ZipWorkerClient implements ZipWorkerBackendHandle {
   private worker?: Worker;
+  private removeWorkerListeners?: () => void;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private readonly instanceBacked: boolean;
@@ -219,7 +224,8 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
           cleanup();
           reject(error);
         },
-        abort
+        abort,
+        canFallback: this.fallback && this.transferMode !== "transfer"
       });
       if (canListenForAbort(options.signal)) options.signal.addEventListener("abort", abort, { once: true });
       if (options.signal.aborted) {
@@ -239,9 +245,7 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
 
   terminate(): void {
     this.rejectPending(terminatedError());
-    this.worker?.terminate();
-    this.worker = undefined;
-    if (this.instanceBacked) this.instanceTerminated = true;
+    this.disposeWorker(this.instanceBacked);
   }
 
   private unsupported(): Promise<undefined> {
@@ -254,22 +258,68 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     if (this.instanceTerminated) return undefined;
     try {
       const worker = typeof this.factory === "function" ? this.factory() : this.factory;
-      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-        const pending = this.pending.get(event.data.id);
-        if (!pending) return;
-        if (event.data.error) pending.reject(reviveError(event.data.error));
-        else pending.resolve(event.data.prepared);
-      };
-      worker.onerror = (event) => {
-        const error = new Error(DEV ? event.message || "JSZipp worker failed" : E_WORKER);
-        this.rejectPending(error);
-        this.terminate();
-      };
+      this.attachWorkerListeners(worker);
       this.worker = worker;
       return worker;
     } catch {
       return undefined;
     }
+  }
+
+  private attachWorkerListeners(worker: Worker): void {
+    const onMessage = (event: MessageEvent<WorkerResponse>): void => {
+      const pending = this.pending.get(event.data.id);
+      if (!pending) return;
+      if (event.data.error) pending.reject(reviveError(event.data.error));
+      else pending.resolve(event.data.prepared);
+    };
+    const onError = (event: ErrorEvent): void => {
+      const error = new Error(DEV ? event.message || "JSZipp worker failed" : E_WORKER);
+      this.failWorker(error);
+    };
+    const onMessageError = (): void => {
+      const error = new Error(DEV ? "JSZipp worker response could not be deserialized" : E_WORKER);
+      this.failWorker(error);
+    };
+    if (typeof worker.addEventListener === "function" && typeof worker.removeEventListener === "function") {
+      worker.addEventListener("message", onMessage as EventListener);
+      worker.addEventListener("error", onError as EventListener);
+      worker.addEventListener("messageerror", onMessageError as EventListener);
+      this.removeWorkerListeners = () => {
+        worker.removeEventListener("message", onMessage as EventListener);
+        worker.removeEventListener("error", onError as EventListener);
+        worker.removeEventListener("messageerror", onMessageError as EventListener);
+      };
+      return;
+    }
+    worker.onmessage = onMessage;
+    worker.onerror = onError;
+    (worker as Worker & { onmessageerror?: ((event: MessageEvent) => void) | null }).onmessageerror = onMessageError;
+    this.removeWorkerListeners = () => {
+      if (worker.onmessage === onMessage) worker.onmessage = null;
+      if (worker.onerror === onError) worker.onerror = null;
+      const fallbackWorker = worker as Worker & { onmessageerror?: ((event: MessageEvent) => void) | null };
+      if (fallbackWorker.onmessageerror === onMessageError) fallbackWorker.onmessageerror = null;
+    };
+  }
+
+  private failWorker(error: unknown): void {
+    const pending = [...this.pending.values()];
+    this.pending.clear();
+    for (const request of pending) {
+      removeAbortListener(request.signal, request.abort);
+      if (request.canFallback) request.resolve(undefined);
+      else request.reject(error);
+    }
+    this.disposeWorker(this.instanceBacked);
+  }
+
+  private disposeWorker(retireInstance: boolean): void {
+    this.removeWorkerListeners?.();
+    this.removeWorkerListeners = undefined;
+    this.worker?.terminate();
+    this.worker = undefined;
+    if (retireInstance) this.instanceTerminated = true;
   }
 
   private rejectPending(error: unknown): void {

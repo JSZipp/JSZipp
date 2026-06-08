@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { runInThisContext } from "node:vm";
 
 const require = createRequire(import.meta.url);
 
@@ -111,5 +112,22 @@ describe("package exports", () => {
     expect(writer).toContain("ZipWriter");
     expect(writer).toContain("ZipTransformStream");
     expect(workerPlugin).toContain("createWorkerBackend");
+  });
+
+  it("exposes worker-plugin UMD global at correct path", () => {
+    // Smoke test: verify that the UMD bundle exports the correct global shape.
+    // The bundle should expose JSZippWorkerPlugin.createWorkerBackend, NOT
+    // JSZippWorkerPlugin.default.createWorkerBackend.
+    const sandboxGlobal = { globalThis: {} };
+    sandboxGlobal.globalThis.self = sandboxGlobal.globalThis;
+
+    const code = readFileSync(join("dist", "jszipp.worker-plugin.umd.js"), "utf8");
+    runInThisContext(code, { filename: "jszipp.worker-plugin.umd.js" });
+
+    const workerPlugin = (globalThis as any).JSZippWorkerPlugin;
+    expect(workerPlugin).toBeDefined();
+    expect(workerPlugin.createWorkerBackend).toBeTypeOf("function");
+    // Should not have a .default property wrapping the actual export
+    expect(workerPlugin.default).toBeUndefined();
   });
 });

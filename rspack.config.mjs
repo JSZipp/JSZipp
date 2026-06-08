@@ -179,7 +179,7 @@ export default defineConfig([
   {
     ...base,
     entry: "./src/worker-plugin-umd.ts",
-    output: { filename: "jszipp.worker-plugin.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZippWorkerPlugin", undefined) }
+    output: { filename: "jszipp.worker-plugin.umd.js", path: dist, globalObject: "globalThis", library: umd("JSZippWorkerPlugin") }
   },
   {
     ...withModernApiFlags(base, false),

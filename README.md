@@ -1020,7 +1020,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm test` runs the Vitest suite only. The compat smoke test and type-only API regression checks require built bundles or extra inputs — run `pnpm run test:all` (or `pnpm run build && pnpm run test:compat-smoke && pnpm run test:types`) to exercise the compatibility UMD bundles and compile the public worker-plugin call shapes. To additionally exercise the shipped bundle in a real
+`pnpm test` runs the Vitest suite only. The compat smoke test requires built bundles — run `pnpm run test:all` (or `pnpm run build && pnpm run test:compat-smoke`) to exercise the compatibility UMD bundles. To additionally exercise the shipped bundle in a real
 browser through the demo UI, install the browser once and run the Playwright
 end-to-end smoke test (it builds first):
 

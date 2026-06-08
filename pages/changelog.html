@@ -81,11 +81,6 @@
             and package export validation.
           </li>
           <li>
-            Added a compile-only regression check for the deprecated
-            <code>worker</code> alias and a worker-backend regression test that simulates a
-            backend returning the wrong path metadata.
-          </li>
-          <li>
             Added a Playwright browser smoke test that imports the built worker plugin, constructs
             a real module worker from <code>dist/jszipp.worker.mjs</code>, writes an archive, and
             validates the result with an independent ZIP reader.
@@ -144,11 +139,6 @@
           <li>
             Ensured worker-prepared async entries produce the same ZIP bytes as the normal in-thread
             writer path for the same inputs and metadata.
-          </li>
-          <li>
-            Kept the deprecated <code>worker</code> alias for <code>workerSource</code> working in
-            the worker plugin so existing integration code keeps running while migrating to the new
-            option name.
           </li>
           <li>
             Fixed the public TypeScript shape of

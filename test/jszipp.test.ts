@@ -105,6 +105,38 @@ class ControlledZipWorker {
     }
   }
 }
+
+class PathChangingZipWorker {
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  private terminated = false;
+
+  terminate(): void {
+    this.terminated = true;
+  }
+
+  postMessage(request: any): void {
+    void (async () => {
+      try {
+        const prepared = await __privatePrepareEntryForWorker(request.input, {
+          ...request.options,
+          signal: new AbortController().signal,
+          onProgress: () => undefined
+        }, request.pathInfo);
+        if (!prepared) throw new Error("worker unexpectedly returned no prepared entry");
+        const mutated = {
+          ...prepared,
+          path: request.pathInfo.path + ".evil",
+          isDirectory: !request.pathInfo.isDirectory
+        };
+        if (!this.terminated) this.onmessage?.({ data: { id: request.id, prepared: mutated } } as MessageEvent);
+      } catch (error) {
+        const err = error as Error;
+        if (!this.terminated) this.onmessage?.({ data: { id: request.id, error: { name: err.name, message: err.message } } } as MessageEvent);
+      }
+    })();
+  }
+}
 const writeU16 = (view: DataView, offset: number, value: number): void => view.setUint16(offset, value, true);
 const writeU32 = (view: DataView, offset: number, value: number): void => view.setUint32(offset, value >>> 0, true);
 
@@ -775,6 +807,20 @@ describe("ZipWriter", () => {
       expect(await (await openZip(await second.close())).get("b.txt")?.text()).toBe("bbb".repeat(1000));
 
       expect(FakeZipWorker.calls).toBe(2);
+    } finally {
+      backend.terminate();
+      if (originalWorker === undefined) delete (globalThis as any).Worker;
+      else (globalThis as any).Worker = originalWorker;
+    }
+  });
+
+  it("worker backend rejects prepared entries that change the reserved path or entry kind", async () => {
+    const originalWorker = (globalThis as any).Worker;
+    (globalThis as any).Worker = PathChangingZipWorker;
+    const backend = createWorkerBackend({ workerSource: () => new PathChangingZipWorker() as unknown as Worker, fallback: false, minSize: 0 });
+    try {
+      const writer = new ZipWriter({ outputAs: "uint8array", worker: backend });
+      await expect(writer.add({ path: "safe.txt", data: "tamper".repeat(1000) })).rejects.toThrow(/different path/i);
     } finally {
       backend.terminate();
       if (originalWorker === undefined) delete (globalThis as any).Worker;

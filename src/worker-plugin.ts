@@ -43,10 +43,10 @@ export interface ZipWorkerBackendOptions {
    * in a modern extension page. A factory is preferred because the backend
    * creates workers lazily, can recreate them after `terminate()` or crashes,
    * and can still honor `fallback` if construction fails. With a compat build, use the matching
-   * `cr61ff58/jszipp.worker.umd.js` or `cr86ff68/jszipp.worker.umd.js` classic
+   * `cr61ff58/jszipp.worker.js` or `cr86ff68/jszipp.worker.js` classic
    * worker script and omit `{ type: "module" }`.
    */
-  workerSource: ZipWorkerFactory;
+  workerSource?: ZipWorkerFactory;
   /**
    * Deprecated alias for `workerSource`.
    *

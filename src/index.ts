@@ -6,6 +6,7 @@ import { StandardFilenameEncoding } from "./types";
 import * as polyfillNative from "./polyfill";
 import * as polyfillCR61FF58 from "./polyfill-CR61FF58";
 import * as polyfillCR86FF68 from "./polyfill-CR86FF68";
+import { E_WORKER } from "./worker-common";
 
 declare const __DEV__: boolean;
 // Build flags for the optional older-browser targets, injected like __DEV__ via
@@ -892,6 +893,9 @@ class ZipEncoderState {
     const pathInfo = this.reservePath(input);
     try {
       const prepared = this.worker && await this.worker.prepare(input, this.options, pathInfo);
+      if (prepared && (prepared.path !== pathInfo.path || prepared.isDirectory !== pathInfo.isDirectory)) {
+        throw new TypeError(DEV ? "worker backend returned an entry for a different path" : E_WORKER);
+      }
       return this.commit(prepared || await prepareEntry(input, this.options, pathInfo));
     } catch (error) {
       this.paths.delete(pathInfo.path);

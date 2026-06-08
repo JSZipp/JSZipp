@@ -64,6 +64,9 @@ The full flow was run against the real built bundle in headless Chromium:
 - Balanced level → `Created compressed-files.zip.`, download captured, yauzl reads
   `fixtures/hello.txt` + `fixtures/notes.txt`, method 8, content exact.
 - Store level → method 0 on both entries.
+- Worker path → imports `dist/jszipp.worker-plugin.mjs`, constructs a real module
+  worker from `dist/jszipp.worker.mjs`, writes `worker.txt`, yauzl validates the
+  archive, method 8.
 - Clear → counts reset, Compress/Download disabled, ZIP size back to `-`.
 
 `tsc --strict` is clean on the spec and config, and `playwright test --list`

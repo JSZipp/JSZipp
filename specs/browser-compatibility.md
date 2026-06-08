@@ -205,9 +205,9 @@ Each build family has two distinct artifacts:
 
 | Build family | Page-side plugin | Worker-side script |
 | ------------ | ---------------- | ------------------ |
-| Modern | `dist/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/jszipp.worker.mjs` module worker and `dist/jszipp.worker.umd.js` classic worker |
-| CR61FF58 | `dist/cr61ff58/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr61ff58/jszipp.worker.umd.js` classic worker |
-| CR86FF68 | `dist/cr86ff68/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr86ff68/jszipp.worker.umd.js` classic worker |
+| Modern | `dist/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/jszipp.worker.mjs` module worker and `dist/jszipp.worker.js` classic worker |
+| CR61FF58 | `dist/cr61ff58/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr61ff58/jszipp.worker.js` classic worker |
+| CR86FF68 | `dist/cr86ff68/jszipp.worker-plugin.mjs`, `.cjs`, `.umd.js` | `dist/cr86ff68/jszipp.worker.js` classic worker |
 
 The package export map mirrors those files:
 
@@ -667,13 +667,15 @@ output.
      the only check that exercises the UMD wrapper's `globalObject` choice (§4.3)
      and the `FileReader` Blob path against a genuine *old* engine; Playwright's
      bundled Chromium cannot stand in for those floors.
-   - **Worker demo, manual or browser-automated.** Load
-     `demo/worker-compression-demo.html` after `pnpm run build` to exercise the
-     static worker-script path. Test at least one modern module-worker path
-     (`dist/jszipp.worker.mjs`) and, when the relevant browsers are available,
-     the compat classic-worker paths (`dist/cr61ff58/jszipp.worker.umd.js` and
-     `dist/cr86ff68/jszipp.worker.umd.js`). A successful run proves the
-     page-side plugin and worker-side script are matched correctly.
+   - **Worker script path.** `pnpm run test:e2e` now includes a Chromium check
+     that imports `dist/jszipp.worker-plugin.mjs`, constructs a real
+     `new Worker("/dist/jszipp.worker.mjs", { type: "module" })`, writes an
+     archive, and validates the bytes with an independent reader. That proves
+     the modern page-side plugin and worker-side module script are matched
+     correctly in a real browser. What still remains manual is extension/CSP
+     deployment and the compat classic-worker paths
+     (`dist/cr61ff58/jszipp.worker.js` and `dist/cr86ff68/jszipp.worker.js`)
+     on their actual legacy browsers.
 
 ---
 

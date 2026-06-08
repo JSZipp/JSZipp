@@ -81,6 +81,16 @@
             and package export validation.
           </li>
           <li>
+            Added a compile-only regression check for the deprecated
+            <code>worker</code> alias and a worker-backend regression test that simulates a
+            backend returning the wrong path metadata.
+          </li>
+          <li>
+            Added a Playwright browser smoke test that imports the built worker plugin, constructs
+            a real module worker from <code>dist/jszipp.worker.mjs</code>, writes an archive, and
+            validates the result with an independent ZIP reader.
+          </li>
+          <li>
             Added <code>specs/README.md</code> to define the repository's normative specification
             set.
           </li>
@@ -101,6 +111,12 @@
             Expanded the API reference, installation guide, examples page, and README with worker
             plugin usage, worker-source lifecycle guidance, transfer-mode behavior, size-threshold
             tuning, and compat-build examples.
+          </li>
+          <li>
+            Corrected worker-script documentation to use the actual emitted classic-worker
+            filenames <code>jszipp.worker.js</code>,
+            <code>cr61ff58/jszipp.worker.js</code>, and
+            <code>cr86ff68/jszipp.worker.js</code>.
           </li>
           <li>
             Reworked the upgrade guide into a full JSZip-to-JSZipp migration reference covering
@@ -133,6 +149,18 @@
             Kept the deprecated <code>worker</code> alias for <code>workerSource</code> working in
             the worker plugin so existing integration code keeps running while migrating to the new
             option name.
+          </li>
+          <li>
+            Fixed the public TypeScript shape of
+            <code>createWorkerBackend()</code> so the deprecated
+            <code>worker</code> alias for <code>workerSource</code> still compiles for TS
+            consumers while the runtime migration path remains unchanged.
+          </li>
+          <li>
+            Hardened <code>ZipWriter</code>'s worker backend integration by rejecting prepared
+            entries whose returned <code>path</code> or <code>isDirectory</code> does not match
+            the writer's already-reserved entry path, preventing custom or buggy backends from
+            bypassing duplicate-path and entry-kind invariants.
           </li>
         </ul>
 

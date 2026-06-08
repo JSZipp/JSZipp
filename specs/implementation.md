@@ -176,9 +176,9 @@ The worker script must match the main build:
 | Main build | Plugin import or script | Worker script |
 | ---------- | ----------------------- | ------------- |
 | Modern ESM/CJS | `web-jszipp/worker-plugin` | `web-jszipp/worker-script` / `dist/jszipp.worker.mjs` module worker |
-| Modern UMD | `dist/jszipp.worker-plugin.umd.js` | `dist/jszipp.worker.umd.js` classic worker |
-| CR61FF58 compat | `web-jszipp/browser-legacy/cr61ff58/worker-plugin` or `dist/cr61ff58/jszipp.worker-plugin.umd.js` | `dist/cr61ff58/jszipp.worker.umd.js` classic worker |
-| CR86FF68 compat | `web-jszipp/browser-legacy/cr86ff68/worker-plugin` or `dist/cr86ff68/jszipp.worker-plugin.umd.js` | `dist/cr86ff68/jszipp.worker.umd.js` classic worker |
+| Modern UMD | `dist/jszipp.worker-plugin.umd.js` | `dist/jszipp.worker.js` classic worker |
+| CR61FF58 compat | `web-jszipp/browser-legacy/cr61ff58/worker-plugin` or `dist/cr61ff58/jszipp.worker-plugin.umd.js` | `dist/cr61ff58/jszipp.worker.js` classic worker |
+| CR86FF68 compat | `web-jszipp/browser-legacy/cr86ff68/worker-plugin` or `dist/cr86ff68/jszipp.worker-plugin.umd.js` | `dist/cr86ff68/jszipp.worker.js` classic worker |
 
 Do not pass `{ type: "module" }` for the compat worker scripts. They are classic
 worker bundles so older browsers can load them.

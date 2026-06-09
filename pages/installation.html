@@ -10,13 +10,14 @@
 npm install web-jszipp
 yarn add web-jszipp</code></pre>
       <h2>Imports</h2>
-      <pre><code>import JSZipp, {
+      <p>Use named imports. They are clearer, enable tree-shaking, and keep unused exports out of your final bundle.</p>
+      <pre><code>import {
   ZipWriter,
   ZipTransformStream,
   openZip,
   readZipStream
 } from "web-jszipp";</code></pre>
-      <p><code>JSZipp</code> is the default namespace export. Named exports are usually clearer in application code and help bundlers keep unused code out of the final app.</p>
+      <p>A default <code>JSZipp</code> namespace is also available for codebases that prefer one object, but named imports are the recommended approach.</p>
       <h2>Worker plugin</h2>
       <p>The Web Worker backend is opt-in. Import the plugin only in pages that should prepare large async <code>ZipWriter.add()</code> entries off the main thread, then pass the backend to the writer.</p>
       <pre><code>import { ZipWriter } from "web-jszipp";
@@ -42,6 +43,43 @@ const worker = createWorkerBackend({
 });</code></pre>
       <p>Use <code>cr86ff68</code> for the Chrome 86 / Firefox 68 family and <code>cr61ff58</code> for the Chrome 61 / Firefox 58 family. Do not pass <code>{ type: "module" }</code> for compat worker scripts; they are classic workers for older browsers.</p>
       <p>The compat bundles only cover the library code they ship. If your app targets Chrome 61, your own code still needs transpilation for that browser floor; for example, raw <code>for await...of</code> in page code will not parse there.</p>
+      <h2>UMD builds (classic <code>&lt;script&gt;</code> tags)</h2>
+      <p>UMD files work with classic <code>&lt;script&gt;</code> tags when module imports are not available. Each entry point exposes a global:</p>
+      <ul>
+        <li><code>jszipp.umd.js</code> → <code>JSZipp</code></li>
+        <li><code>jszipp.reader.umd.js</code> → <code>JSZippReader</code></li>
+        <li><code>jszipp.writer.umd.js</code> → <code>JSZippWriter</code></li>
+        <li><code>jszipp.worker-plugin.umd.js</code> → <code>JSZippWorkerPlugin</code></li>
+      </ul>
+      <p>Load the main bundle and access the API via the global:</p>
+      <pre><code>&lt;script src="/vendor/jszipp.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+const writer = new JSZipp.ZipWriter({ outputAs: "blob" });
+await writer.add({ path: "hello.txt", data: "Hello World\n" });
+const blob = await writer.close();
+&lt;/script&gt;</code></pre>
+      <p>Load the worker plugin as a separate global and use it with the writer:</p>
+      <pre><code>&lt;script src="/vendor/jszipp.umd.js"&gt;&lt;/script&gt;
+&lt;script src="/vendor/jszipp.worker-plugin.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+const worker = JSZippWorkerPlugin.createWorkerBackend({
+  workerSource: () =&gt; new Worker("/vendor/jszipp.worker.js")
+});
+
+const writer = new JSZipp.ZipWriter({ outputAs: "blob", worker });
+await writer.add({ path: "large.bin", data: file });
+const blob = await writer.close();
+worker.terminate();
+&lt;/script&gt;</code></pre>
+      <p>For compat builds, use the matching compat artifacts:</p>
+      <pre><code>&lt;script src="/vendor/cr86ff68/jszipp.umd.js"&gt;&lt;/script&gt;
+&lt;script src="/vendor/cr86ff68/jszipp.worker-plugin.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+// Same globals; compat worker uses classic script without { type: "module" }
+const worker = JSZippWorkerPlugin.createWorkerBackend({
+  workerSource: () =&gt; new Worker("/vendor/cr86ff68/jszipp.worker.js")
+});
+&lt;/script&gt;</code></pre>
       <h2>Runtime</h2>
       <ul>
         <li>ECMAScript 2019 output.</li>

@@ -95,6 +95,35 @@ Implementation docs should not become:
 When implementation docs need generic context, use a short sentence plus a link
 to the canonical domain or format reference.
 
+Implementation docs MAY mention the current code layout, helper names, or build
+modules when that materially helps navigation, but those references SHOULD be
+treated as examples of the current implementation, not as the durable rule
+itself. The normative statement SHOULD target:
+
+- behavior;
+- invariants;
+- ownership boundaries;
+- compatibility requirements;
+- required proof obligations.
+
+It SHOULD NOT make a private function name, source file path, or one current
+tooling choice into the requirement unless that identifier is itself part of the
+public contract or the repository layout is intentionally versioned as part of
+the deliverable.
+
+Preferred pattern:
+
+```markdown
+Prefer: "the compatibility seam must install the missing methods before public
+APIs are used."
+
+Avoid: "src/polyfill-compat.ts must call installPolyfills() from index.ts."
+```
+
+If a current file/module name is still worth mentioning, phrase it as
+"currently implemented in ..." or "the current source tree uses ...", so a
+refactor does not force a normative spec change when behavior is unchanged.
+
 ## Separate Generic Rules From Project Behavior
 
 Many bugs in docs come from mixing three different layers:

@@ -33,13 +33,23 @@ const umode = (entry?: { externalAttributes?: number }): number | undefined => {
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const nodeCrc32 = (bytes: Uint8Array): number => crc32(bytes) >>> 0;
-const expectBytesEqual = (actual: Uint8Array | undefined, expected: Uint8Array, label?: string): void => {
+const expectBytesEqual = (actual: Uint8Array<ArrayBuffer> | undefined, expected: Uint8Array<ArrayBuffer>, label?: string): void => {
   expect(actual, label).toBeDefined();
-  expect(
-    Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
-      .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength)),
-    label
-  ).toBe(true);
+
+  if (actual!.byteLength !== expected.byteLength) {
+    expect(actual!.byteLength, `${label} byte length`).toBe(expected.byteLength);
+    return;
+  }
+
+  if (expected.byteLength === 0) return;
+
+  const ret = Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
+    .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength));
+
+  if (ret !== true) {
+    expect(ret, label).toBe(true);
+  }
+
 };
 
 class FakeZipWorker {
@@ -81,7 +91,7 @@ class FakeZipWorker {
           ...request.options,
           signal: new AbortController().signal,
           onProgress: () => undefined
-        }, request.pathInfo);
+        }, request.path);
         this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
       } catch (error) {
         const err = error as Error;
@@ -116,7 +126,7 @@ class ControlledZipWorker extends FakeZipWorker {
         ...request.options,
         signal: new AbortController().signal,
         onProgress: () => undefined
-      }, request.pathInfo);
+      }, request.path);
       this.dispatch("message", { data: { id: request.id, prepared } } as MessageEvent);
     } catch (error) {
       const err = error as Error;
@@ -133,12 +143,12 @@ class PathChangingZipWorker extends FakeZipWorker {
           ...request.options,
           signal: new AbortController().signal,
           onProgress: () => undefined
-        }, request.pathInfo);
+        }, request.path);
         if (!prepared) throw new Error("worker unexpectedly returned no prepared entry");
         const mutated = {
           ...prepared,
-          path: request.pathInfo.path + ".evil",
-          isDirectory: !request.pathInfo.isDirectory
+          path: request.path + ".evil",
+          isDirectory: !request.path.endsWith("/")
         };
         this.dispatch("message", { data: { id: request.id, prepared: mutated } } as MessageEvent);
       } catch (error) {
@@ -751,8 +761,129 @@ const buildDataDescriptorZip = (entries: DescriptorZipEntry[], archiveComment = 
   return concatBytes([...localChunks, centralDirectory, eocd]);
 };
 
+const buildZip64LocalOffsetOnlyArchive = (): TestBytes => {
+  // One stored entry whose central-directory record uses 0xffffffff for the
+  // local-header offset, supplying the real value (0) in a ZIP64 extra that
+  // contains only the localOffset field (no saturated size fields present).
+  // Validates the conditional ZIP64-extra shift() pattern in readCentralEntry.
+  const pathBytes = encode("a.txt");
+  const data = encode("hello");
+  const crc = nodeCrc32(data);
+
+  const local = new Uint8Array(30 + pathBytes.length) as TestBytes;
+  const localView = new DataView(local.buffer);
+  writeU32(localView, 0, 0x04034b50);
+  writeU16(localView, 4, 20);
+  writeU16(localView, 6, 0x0800);
+  writeU16(localView, 8, 0);
+  writeU32(localView, 14, crc);
+  writeU32(localView, 18, data.length);
+  writeU32(localView, 22, data.length);
+  writeU16(localView, 26, pathBytes.length);
+  writeU16(localView, 28, 0);
+  local.set(pathBytes, 30);
+
+  const centralOffset = local.length + data.length;
+
+  // ZIP64 extra: only the 8-byte localOffset field (no size fields)
+  const zip64Extra = new Uint8Array(12) as TestBytes;
+  const z64View = new DataView(zip64Extra.buffer);
+  writeU16(z64View, 0, 0x0001);
+  writeU16(z64View, 2, 8);
+  writeU32(z64View, 4, 0); // real localOffset = 0, low 32 bits
+  writeU32(z64View, 8, 0); // high 32 bits
+
+  const central = new Uint8Array(46 + pathBytes.length + zip64Extra.length) as TestBytes;
+  const centralView = new DataView(central.buffer);
+  writeU32(centralView, 0, 0x02014b50);
+  writeU16(centralView, 4, 45);
+  writeU16(centralView, 6, 45);
+  writeU16(centralView, 8, 0x0800);
+  writeU16(centralView, 10, 0);
+  writeU32(centralView, 16, crc);
+  writeU32(centralView, 20, data.length); // NOT saturated
+  writeU32(centralView, 24, data.length); // NOT saturated
+  writeU16(centralView, 28, pathBytes.length);
+  writeU16(centralView, 30, zip64Extra.length);
+  writeU32(centralView, 42, 0xffffffff); // localOffset sentinel
+  central.set(pathBytes, 46);
+  central.set(zip64Extra, 46 + pathBytes.length);
+
+  const eocd = new Uint8Array(22) as TestBytes;
+  const eocdView = new DataView(eocd.buffer);
+  writeU32(eocdView, 0, 0x06054b50);
+  writeU16(eocdView, 8, 1);
+  writeU16(eocdView, 10, 1);
+  writeU32(eocdView, 12, central.length);
+  writeU32(eocdView, 16, centralOffset);
+
+  return concatBytes([local, data, central, eocd]);
+};
+
+const buildArchiveWithEmptyZip64Extra = (entries: { path: string; data: string }[]): TestBytes => {
+  // Identical layout to buildDuplicateStoredArchive except that each central-
+  // directory record carries a 4-byte empty ZIP64 extra (id=0x0001, size=0x0000).
+  // Such archives are produced by some versions of Apache Ant and Commons Compress.
+  const localChunks: Uint8Array[] = [];
+  const centralItems: { path: TestBytes; data: TestBytes; crc32: number; localOffset: number }[] = [];
+
+  for (const entry of entries) {
+    const path = encode(entry.path);
+    const data = encode(entry.data);
+    const localOffset = localChunks.reduce((sum, c) => sum + c.length, 0);
+    const crc = nodeCrc32(data);
+    const local = new Uint8Array(30 + path.length) as TestBytes;
+    const view = new DataView(local.buffer);
+
+    writeU32(view, 0, 0x04034b50);
+    writeU16(view, 4, 20);
+    writeU16(view, 8, 0);
+    writeU32(view, 14, crc);
+    writeU32(view, 18, data.length);
+    writeU32(view, 22, data.length);
+    writeU16(view, 26, path.length);
+    local.set(path, 30);
+
+    localChunks.push(local, data);
+    centralItems.push({ path, data, crc32: crc, localOffset });
+  }
+
+  const centralOffset = localChunks.reduce((sum, c) => sum + c.length, 0);
+  const zip64EmptyExtra = byteArray([0x01, 0x00, 0x00, 0x00]); // id=0x0001, size=0
+
+  const centralChunks = centralItems.map((item) => {
+    const header = new Uint8Array(46 + item.path.length + zip64EmptyExtra.length) as TestBytes;
+    const view = new DataView(header.buffer);
+
+    writeU32(view, 0, 0x02014b50);
+    writeU16(view, 4, 20);
+    writeU16(view, 6, 20);
+    writeU16(view, 10, 0);
+    writeU32(view, 16, item.crc32);
+    writeU32(view, 20, item.data.length);
+    writeU32(view, 24, item.data.length);
+    writeU16(view, 28, item.path.length);
+    writeU16(view, 30, zip64EmptyExtra.length);
+    writeU32(view, 42, item.localOffset);
+    header.set(item.path, 46);
+    header.set(zip64EmptyExtra, 46 + item.path.length);
+    return header;
+  });
+
+  const centralDir = concatBytes(centralChunks);
+  const eocd = new Uint8Array(22) as TestBytes;
+  const eocdView = new DataView(eocd.buffer);
+  writeU32(eocdView, 0, 0x06054b50);
+  writeU16(eocdView, 8, entries.length);
+  writeU16(eocdView, 10, entries.length);
+  writeU32(eocdView, 12, centralDir.length);
+  writeU32(eocdView, 16, centralOffset);
+
+  return concatBytes([...localChunks, centralDir, eocd]);
+};
+
 describe("ZipWriter", () => {
-  it.concurrent("exposes JSZipp as the default namespace", () => {
+  it("exposes JSZipp as the default namespace", () => {
     expect(JSZipp.ZipWriter).toBe(ZipWriter);
     expect(JSZipp.ZipTransformStream).toBe(ZipTransformStream);
     expect(JSZipp.openZip).toBe(openZip);
@@ -1116,7 +1247,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it.concurrent("writes a ZIP archive with stored entries when level is 0", async () => {
+  it("writes a ZIP archive with stored entries when level is 0", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off" });
 
     await writer.add({ path: "plain.txt", data: "stored content" });
@@ -1129,7 +1260,7 @@ describe("ZipWriter", () => {
     expect(await reader.get("plain.txt")?.text()).toBe("stored content");
   });
 
-  it.concurrent("defaults ZIP64 to auto and only emits ZIP64 records when required", async () => {
+  it("defaults ZIP64 to auto and only emits ZIP64 records when required", async () => {
     const autoWriter = new ZipWriter({ level: 0, outputAs: "uint8array" });
     await autoWriter.add({ path: "small.txt", data: "small" });
     const autoArchive = await autoWriter.close();
@@ -1146,7 +1277,7 @@ describe("ZipWriter", () => {
     expect(hasSignature(forcedArchive, 0x07064b50)).toBe(true);
   });
 
-  it.concurrent("reads forced ZIP64 archives with comments, custom extras, and metadata", async () => {
+  it("reads forced ZIP64 archives with comments, custom extras, and metadata", async () => {
     const modifiedAt = absoluteDate("2023-11-12T13:14:16Z");
     const customExtra = byteArray([0x55, 0xaa, 0x03, 0x00, 0x01, 0x02, 0x03]);
     const writer = new ZipWriter({
@@ -1182,28 +1313,42 @@ describe("ZipWriter", () => {
     expect(await entry.text()).toBe("zip64 payload");
   });
 
-  it.concurrent("auto emits ZIP64 when standard entry-count limits are exceeded", async () => {
+  it("auto emits ZIP64 exactly when the entry count overflows the 16-bit EOCD field", async () => {
+    // The writer's ZIP64-upgrade decision and the ZIP64 EOCD it writes both key
+    // off the running entry count, so forge it instead of building tens of
+    // thousands of real entries. 0xffff is the largest count the 16-bit EOCD
+    // fields can hold -- still no ZIP64.
+    const atLimit = new ZipWriter({ level: 0, outputAs: "uint8array" });
+    setInternalEntryCount(atLimit, 0xffff);
+    const atLimitArchive = await atLimit.close();
+    expect(hasSignature(atLimitArchive, 0x06064b50)).toBe(false);
+    expect(hasSignature(atLimitArchive, 0x07064b50)).toBe(false);
+
+    // One past the limit overflows the 16-bit field -> ZIP64 EOCD/locator, with
+    // the true count carried in the ZIP64 EOCD's 64-bit total-entries field (+32).
     const autoWriter = new ZipWriter({ level: 0, outputAs: "uint8array" });
     setInternalEntryCount(autoWriter, 0x10000);
-
-    const autoArchive = await autoWriter.close();
+    const autoArchive = byteArray(await autoWriter.close());
     expect(hasSignature(autoArchive, 0x06064b50)).toBe(true);
     expect(hasSignature(autoArchive, 0x07064b50)).toBe(true);
+    const zip64Eocd = findSignature(autoArchive, 0x06064b50);
+    const autoView = new DataView(autoArchive.buffer, autoArchive.byteOffset, autoArchive.byteLength);
+    expect(Number(autoView.getBigUint64(zip64Eocd + 32, true))).toBe(0x10000);
 
+    // With ZIP64 disabled the same overflow must be rejected, not truncated.
     const disabledWriter = new ZipWriter({ level: 0, zip64: "off" });
     setInternalEntryCount(disabledWriter, 0x10000);
-
     await expect(disabledWriter.close()).rejects.toThrow(RangeError);
   });
 
-  it.concurrent("rejects entries that need ZIP64 offsets when ZIP64 is disabled without allocating large archives", async () => {
+  it("rejects entries that need ZIP64 offsets when ZIP64 is disabled without allocating large archives", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off" });
     setInternalOffset(writer, 0x100000000);
 
     await expect(writer.add({ path: "too-far.txt", data: "small" })).rejects.toThrow(RangeError);
   });
 
-  it.concurrent("writes compressed entries and preserves metadata", async () => {
+  it("writes compressed entries and preserves metadata", async () => {
     const modifiedAt = absoluteDate("2024-04-05T06:07:08Z");
     const extraField = byteArray([0x99, 0x99, 0x02, 0x00, 0xaa, 0xbb]);
     const repeated = "compressible-".repeat(1024);
@@ -1227,7 +1372,7 @@ describe("ZipWriter", () => {
     expect(await entry?.text()).toBe(repeated);
   });
 
-  it.concurrent("round-trips generated dummy files with metadata and content hashes", async () => {
+  it("round-trips generated dummy files with metadata and content hashes", async () => {
     const files = Array.from({ length: 7 }, (_, index) => {
       const binary = index % 2 === 1;
       const size = 128 + index * 37;
@@ -1277,7 +1422,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it.concurrent("concurrently writes and reads independent archives with interleaved dummy files", async () => {
+  it("concurrently writes and reads independent archives with interleaved dummy files", async () => {
     const files = Array.from({ length: 9 }, (_, index) => {
       const number = index + 1;
       const data = seededRandomBytes(0xc0de0000 + number, 2048 + number * 257);
@@ -1317,7 +1462,7 @@ describe("ZipWriter", () => {
     );
   });
 
-  it.concurrent("reads generated dummy files compressed by Node zlib", async () => {
+  it("reads generated dummy files compressed by Node zlib", async () => {
     const files = Array.from({ length: 7 }, (_, index): ZlibZipEntry => {
       const binary = index % 2 === 0;
       const size = 131 + index * 31;
@@ -1354,7 +1499,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it.concurrent("decompresses representative ZIP variants through random-access and stream readers", async () => {
+  it("decompresses representative ZIP variants through random-access and stream readers", async () => {
     const repeatedText = encode("alpha beta gamma\n".repeat(256));
     const binary = seededRandomBytes(0xdecafbad, 4096);
     const empty = byteArray([]);
@@ -1464,7 +1609,7 @@ describe("ZipWriter", () => {
     }
   }, 15_000);
 
-  it.concurrent("encodes ZIP DOS timestamps at field boundaries and decodes zero date fields safely", async () => {
+  it("encodes ZIP DOS timestamps at field boundaries and decodes zero date fields safely", async () => {
     const cases = [
       { path: "min.txt", modifiedAt: absoluteDate("1980-01-01T00:00:00Z") },
       { path: "leap.txt", modifiedAt: absoluteDate("2024-02-29T08:07:06Z") },
@@ -1525,7 +1670,7 @@ describe("ZipWriter", () => {
     expect(zeroEntry.modifiedAt?.getSeconds()).toBe(30);
   });
 
-  it.concurrent("encodes compression dates from absolute timestamps across GMT-12 through GMT+14", async () => {
+  it("encodes compression dates from absolute timestamps across GMT-12 through GMT+14", async () => {
     const offsetSuffix = (offsetHours: number): string => {
       if (offsetHours === 0) return "Z";
       const sign = offsetHours < 0 ? "-" : "+";
@@ -1567,7 +1712,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it.concurrent("writes legacy DOS fields and Extended Timestamp extras for the same modifiedAt", async () => {
+  it("writes legacy DOS fields and Extended Timestamp extras for the same modifiedAt", async () => {
     const modifiedAt = absoluteDate("2026-06-02T03:00:01Z");
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
 
@@ -1590,7 +1735,7 @@ describe("ZipWriter", () => {
     expect(entry.modifiedAt?.toISOString()).toBe("2026-06-02T03:00:01.000Z");
   });
 
-  it.concurrent("prefers Extended Timestamp mtime over conflicting legacy DOS fields", async () => {
+  it("prefers Extended Timestamp mtime over conflicting legacy DOS fields", async () => {
     const modifiedAt = absoluteDate("2026-06-02T03:00:01Z");
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
 
@@ -1620,7 +1765,7 @@ describe("ZipWriter", () => {
     expect(entry.modifiedAt?.toISOString()).toBe("2026-06-02T03:00:01.000Z");
   });
 
-  it.concurrent("accounts for DOS timestamp two-second precision while preserving Extended Timestamp mtime", async () => {
+  it("accounts for DOS timestamp two-second precision while preserving Extended Timestamp mtime", async () => {
     const cases = [
       {
         path: "mtime-33.txt",
@@ -1699,7 +1844,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it.concurrent("can omit automatic Extended Timestamp extras to reduce per-entry metadata", async () => {
+  it("can omit automatic Extended Timestamp extras to reduce per-entry metadata", async () => {
     const modifiedAt = absoluteDate("2026-06-02T01:14:35Z");
     const defaultWriter = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     const compactWriter = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
@@ -1727,7 +1872,7 @@ describe("ZipWriter", () => {
     expect(compactRaw.centralTime).toBe(expected.time);
   });
 
-  it.concurrent("encodes DOS timestamps as local time and preserves fflate #219 UTC mtime in the extra field", async () => {
+  it("encodes DOS timestamps as local time and preserves fflate #219 UTC mtime in the extra field", async () => {
     const modifiedAt = new Date(504932400000); // 1986-01-01T03:00:00.000Z
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
 
@@ -1751,7 +1896,7 @@ describe("ZipWriter", () => {
     expect(entry.modifiedAt?.toISOString()).toBe("1986-01-01T03:00:00.000Z");
   });
 
-  it.concurrent("accepts Blob, Uint8Array, directory, and ReadableStream payloads", async () => {
+  it("accepts Blob, Uint8Array, directory, and ReadableStream payloads", async () => {
     const writer = new ZipWriter({ level: 6, outputAs: "blob" });
 
     await writer.add({ path: "blob.txt", data: new Blob(["blob data"]) });
@@ -1768,7 +1913,7 @@ describe("ZipWriter", () => {
     expect(await reader.get("stream.txt")?.text()).toBe("stream data");
   });
 
-  it.concurrent("returns a Response wrapper when outputAs is response", async () => {
+  it("returns a Response wrapper when outputAs is response", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "response" });
 
     await writer.add({ path: "response.txt", data: "response body" });
@@ -1781,7 +1926,7 @@ describe("ZipWriter", () => {
     expect(await reader.get("response.txt")?.text()).toBe("response body");
   });
 
-  it.concurrent("returns a Blob with the configured MIME type when outputAs is blob", async () => {
+  it("returns a Blob with the configured MIME type when outputAs is blob", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "blob", mimeType: "application/x-zip-compressed" });
 
     await writer.add({ path: "blob-mime.txt", data: "blob body" });
@@ -1792,7 +1937,7 @@ describe("ZipWriter", () => {
     expect(await (await openZip(blob)).get("blob-mime.txt")?.text()).toBe("blob body");
   });
 
-  it.concurrent("returns Uint8Array and ArrayBuffer outputs", async () => {
+  it("returns Uint8Array and ArrayBuffer outputs", async () => {
     const bytesWriter = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await bytesWriter.add({ path: "bytes-output.txt", data: "byte output" });
     const bytes = await bytesWriter.close();
@@ -1808,7 +1953,7 @@ describe("ZipWriter", () => {
     expect(await (await openZip(buffer)).get("buffer-output.txt")?.text()).toBe("buffer output");
   });
 
-  it.concurrent("supports synchronous writing for in-memory entries and output modes", async () => {
+  it("supports synchronous writing for in-memory entries and output modes", async () => {
     const bytesWriter = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     bytesWriter.writeSync({ path: "sync-string.txt", data: "sync text" });
     bytesWriter.writeSync({ path: "sync-bytes.bin", data: byteArray([7, 8, 9]) });
@@ -1833,7 +1978,7 @@ describe("ZipWriter", () => {
     expect(await (await openZip(await response.arrayBuffer())).get("sync-response.txt")?.text()).toBe("response body");
   });
 
-  it.concurrent("keeps asynchronous and synchronous writer modes separate", async () => {
+  it("keeps asynchronous and synchronous writer modes separate", async () => {
     const asyncWriter = new ZipWriter({ level: 0 });
     await asyncWriter.add({ path: "async.txt", data: "async" });
     expect(() => asyncWriter.writeSync({ path: "sync.txt", data: "sync" })).toThrow(DOMException);
@@ -1846,7 +1991,7 @@ describe("ZipWriter", () => {
     await expect(syncWriter.close()).rejects.toThrow(DOMException);
   });
 
-  it.concurrent("allows entry-level compression method overrides", async () => {
+  it("allows entry-level compression method overrides", async () => {
     const repeated = "compress-me-".repeat(512);
     const writer = new ZipWriter({ level: 6, outputAs: "blob" });
 
@@ -1859,7 +2004,7 @@ describe("ZipWriter", () => {
     expect(reader.get("deflated.txt")?.compressedSize).toBeLessThan(repeated.length);
   });
 
-  it.concurrent("stores incompressible entries automatically when DEFLATE would expand them", async () => {
+  it("stores incompressible entries automatically when DEFLATE would expand them", async () => {
     const data = seededRandomBytes(0x12345678, 4096);
     const writer = new ZipWriter({ level: 6, zip64: "off", outputAs: "uint8array" });
 
@@ -1873,7 +2018,7 @@ describe("ZipWriter", () => {
     expectBytesEqual(await (await openZip(archive)).get("random.bin")!.bytes(), data);
   });
 
-  it.concurrent("honors explicit deflate even when storing would be smaller", async () => {
+  it("honors explicit deflate even when storing would be smaller", async () => {
     const data = seededRandomBytes(0x87654321, 4096);
     const writer = new ZipWriter({ level: 6, zip64: "off", outputAs: "uint8array" });
 
@@ -1886,7 +2031,7 @@ describe("ZipWriter", () => {
     expectBytesEqual(await (await openZip(archive)).get("random.bin")!.bytes(), data);
   });
 
-  it.concurrent("honors per-entry compression levels", async () => {
+  it("honors per-entry compression levels", async () => {
     let text = "";
     for (let index = 0; index < 2000; index++) {
       text += `row-${index % 97}-${"abc".repeat(index % 13)}-${index}\n`;
@@ -1902,7 +2047,7 @@ describe("ZipWriter", () => {
     expect(await reader.get("small.txt")?.text()).toBe(text);
   });
 
-  it.concurrent("falls back to DEFLATE stored blocks for incompressible entries", async () => {
+  it("falls back to DEFLATE stored blocks for incompressible entries", async () => {
     const data = new Uint8Array(4096) as TestBytes;
     let state = 0x12345678;
     for (let index = 0; index < data.length; index++) {
@@ -1925,7 +2070,7 @@ describe("ZipWriter", () => {
     expectBytesEqual(await (await openZip(archive)).get("incompressible.bin")!.bytes(), data);
   });
 
-  it.concurrent("writes archive comments, ArrayBuffer input entries, directories, and external attributes", async () => {
+  it("writes archive comments, ArrayBuffer input entries, directories, and external attributes", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "blob", comment: "archive comment" });
     const data = encode("buffer input").buffer;
 
@@ -1950,7 +2095,7 @@ describe("ZipWriter", () => {
     expect(umode(directory)).toBe(0o040755);
   });
 
-  it.concurrent("reports progress and honors abort signals", async () => {
+  it("reports progress and honors abort signals", async () => {
     const progress: string[] = [];
     const writer = new ZipWriter({
       level: 0,
@@ -1972,7 +2117,7 @@ describe("ZipWriter", () => {
     await expect(aborted.add({ path: "abort.txt", data: "abort" })).rejects.toThrow();
   });
 
-  it.concurrent("supports custom response MIME type", async () => {
+  it("supports custom response MIME type", async () => {
     const writer = new ZipWriter({ outputAs: "response", mimeType: "application/x-zip-compressed" });
 
     await writer.add({ path: "mime.txt", data: "mime" });
@@ -1981,7 +2126,7 @@ describe("ZipWriter", () => {
     expect(response.headers.get("Content-Type")).toBe("application/x-zip-compressed");
   });
 
-  it.concurrent("rejects add and close after the writer is closed", async () => {
+  it("rejects add and close after the writer is closed", async () => {
     const writer = new ZipWriter({ outputAs: "blob" });
 
     await writer.add({ path: "closed.txt", data: "closed" });
@@ -1992,19 +2137,19 @@ describe("ZipWriter", () => {
   });
 
   describe("field validation", () => {
-    it.concurrent("rejects an entry path longer than 65535 bytes instead of truncating it", async () => {
+    it("rejects an entry path longer than 65535 bytes instead of truncating it", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "a".repeat(70000), data: "x" })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("rejects an entry comment longer than 65535 bytes", async () => {
+    it("rejects an entry comment longer than 65535 bytes", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "f.txt", data: "x", meta: { comment: "c".repeat(70000) } })).rejects.toThrow(RangeError);
     });
   });
 
   describe("ZIP64 extra fields", () => {
-    it.concurrent("omits the local-header offset from the local ZIP64 extra but keeps it in central", async () => {
+    it("omits the local-header offset from the local ZIP64 extra but keeps it in central", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "force", outputAs: "uint8array" });
       await writer.add({ path: "z.txt", data: "payload" });
       const archive = await writer.close();
@@ -2019,7 +2164,7 @@ describe("ZipWriter", () => {
   });
 
   describe("timestamp edge cases", () => {
-    it.concurrent("clamps a year past 2107 to 2107 rather than corrupting the month/day", async () => {
+    it("clamps a year past 2107 to 2107 rather than corrupting the month/day", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await writer.add({ path: "future.txt", data: "x", meta: { modifiedAt: absoluteDate("2200-06-15T10:00:00Z") } });
       const archive = await writer.close();
@@ -2033,7 +2178,7 @@ describe("ZipWriter", () => {
       expect(entry.modifiedAt?.getFullYear()).toBe(2107);
     });
 
-    it.concurrent("encodes the same timestamp fields for the same fixed instant", async () => {
+    it("encodes the same timestamp fields for the same fixed instant", async () => {
       const instant = Date.UTC(2024, 5, 1, 12, 0, 0);
       const a = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await a.add({ path: "f.txt", data: "x", meta: { modifiedAt: new Date(instant) } });
@@ -2045,7 +2190,7 @@ describe("ZipWriter", () => {
   });
 
   describe("path policy", () => {
-    it.concurrent("default ('unsafe') keeps legacy behavior and can produce self-incompatible archives", async () => {
+    it("default ('unsafe') keeps legacy behavior and can produce self-incompatible archives", async () => {
       const bytes = buildArchive([{ path: "../evil.txt", data: "x" }]);
 
       await expect(openZip(bytes)).rejects.toThrow(/unsafe zip entry path/i);
@@ -2053,12 +2198,12 @@ describe("ZipWriter", () => {
       expect(reader.entries[0].path).toBe("../evil.txt");
     });
 
-    it.concurrent("strict writer rejects unsafe paths", () => {
+    it("strict writer rejects unsafe paths", () => {
       const writer = new ZipWriter({ outputAs: "uint8array", pathMode: "strict" });
       expect(() => writer.writeSync({ path: "../evil.txt", data: "x" })).toThrow(/unsafe zip entry path/i);
     });
 
-    it.concurrent("strict-package writer applies strict per-path safety and round-trips through strict-package read", async () => {
+    it("strict-package writer applies strict per-path safety and round-trips through strict-package read", async () => {
       const reject = new ZipWriter({ outputAs: "uint8array", pathMode: "strict-package" });
       expect(() => reject.writeSync({ path: "../evil.txt", data: "x" })).toThrow(/unsafe zip entry path/i);
 
@@ -2071,7 +2216,7 @@ describe("ZipWriter", () => {
       expect(await reader.get("pkg/b.txt")?.text()).toBe("two");
     });
 
-    it.concurrent("sanitize writer produces a strict-readable archive", async () => {
+    it("sanitize writer produces a strict-readable archive", async () => {
       const bytes = buildArchive([{ path: "../../evil.txt", data: "x" }], { pathMode: "sanitize" });
       const reader = await openZip(bytes);
       expect(reader.entries[0].path).toBe("evil.txt");
@@ -2085,20 +2230,20 @@ describe("ZipWriter", () => {
       return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(central + 4, true);
     };
 
-    it.concurrent("advertises the Unix host (3) when Unix mode bits are present", () => {
+    it("advertises the Unix host (3) when Unix mode bits are present", () => {
       const bytes = buildArchive([{ path: "run.sh", data: "#!/bin/sh\n", meta: { unixPermissions: 0o755 } }]);
       expect(versionMadeBy(bytes) >>> 8).toBe(3);
       expect(versionMadeBy(bytes) & 0xff).toBe(45);
     });
 
-    it.concurrent("keeps the DOS host (0) when no Unix metadata is written", () => {
+    it("keeps the DOS host (0) when no Unix metadata is written", () => {
       // No explicit permission option and a DOS-only timestamps mode, so no Unix
       // store permission is synthesized and the DOS host (0) is kept.
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }], { timestamps: TimestampMode.Dos });
       expect(versionMadeBy(bytes) >>> 8).toBe(0);
     });
 
-    it.concurrent("advertises the Unix host (3) once a unix timestamp is added (default mode)", () => {
+    it("advertises the Unix host (3) once a unix timestamp is added (default mode)", () => {
       // The default Dos | Unix mode writes an Extended Timestamp (0x5455), which
       // triggers default Unix store permissions and the Unix host (3).
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
@@ -2107,7 +2252,7 @@ describe("ZipWriter", () => {
   });
 
   describe("unix store permissions", () => {
-    it.concurrent("synthesizes default permissions when a unix timestamp is written", async () => {
+    it("synthesizes default permissions when a unix timestamp is written", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
       await writer.add({ path: "file.txt", data: "hi" });
       await writer.add({ path: "dir/", data: "" });
@@ -2117,7 +2262,7 @@ describe("ZipWriter", () => {
       expect(umode(reader.get("dir/"))).toBe(0o040755);
     });
 
-    it.concurrent("does not synthesize permissions in dos-only mode without an explicit option", async () => {
+    it("does not synthesize permissions in dos-only mode without an explicit option", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
       await writer.add({ path: "file.txt", data: "hi" });
       const reader = await openZip(await writer.close());
@@ -2125,7 +2270,7 @@ describe("ZipWriter", () => {
       expect(reader.get("file.txt")?.externalAttributes).toBe(0);
     });
 
-    it.concurrent("honors an explicit unixPermissions option and advertises the Unix host", async () => {
+    it("honors an explicit unixPermissions option and advertises the Unix host", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
       await writer.add({ path: "secret.txt", data: "x", meta: { unixPermissions: 0o600 } });
       const bytes = await writer.close();
@@ -2135,7 +2280,7 @@ describe("ZipWriter", () => {
       expect(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(central + 4, true) >>> 8).toBe(3);
     });
 
-    it.concurrent("records an explicit 0o755 on a regular file without complaint", async () => {
+    it("records an explicit 0o755 on a regular file without complaint", async () => {
       // No validation: any permission combination is accepted as-is.
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
       await writer.add({ path: "bin/run", data: "#!/bin/sh\n", meta: { unixPermissions: 0o755 } });
@@ -2143,7 +2288,7 @@ describe("ZipWriter", () => {
       expect(umode(reader.get("bin/run"))).toBe(0o100755);
     });
 
-    it.concurrent("accepts an unusual permission on a directory as-is", async () => {
+    it("accepts an unusual permission on a directory as-is", async () => {
       // 0o644 on a directory is unusual but not rejected — POSIX places no
       // constraint on which mode-bit combinations are meaningful.
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
@@ -2152,7 +2297,7 @@ describe("ZipWriter", () => {
       expect(umode(reader.get("dir/"))).toBe(0o040644);
     });
 
-    it.concurrent("accepts the boundary permissions 0o000 and 0o777", async () => {
+    it("accepts the boundary permissions 0o000 and 0o777", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
       await writer.add({ path: "none", data: "x", meta: { unixPermissions: 0o000 } });
       await writer.add({ path: "all", data: "x", meta: { unixPermissions: 0o777 } });
@@ -2161,24 +2306,24 @@ describe("ZipWriter", () => {
       expect(umode(reader.get("all"))).toBe(0o100777);
     });
 
-    it.concurrent("rejects permissions above the 3-digit octal range", async () => {
+    it("rejects permissions above the 3-digit octal range", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "f", data: "x", meta: { unixPermissions: 0o1000 } })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("rejects setuid/setgid/sticky bits (0o7000)", async () => {
+    it("rejects setuid/setgid/sticky bits (0o7000)", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "f", data: "x", meta: { unixPermissions: 0o4755 } })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("rejects negative or non-integer permissions", async () => {
+    it("rejects negative or non-integer permissions", async () => {
       const w1 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(w1.add({ path: "f", data: "x", meta: { unixPermissions: -1 } })).rejects.toThrow(RangeError);
       const w2 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(w2.add({ path: "f", data: "x", meta: { unixPermissions: 0o644 + 0.5 } })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("lets an explicit externalAttributes value override permission synthesis", async () => {
+    it("lets an explicit externalAttributes value override permission synthesis", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
       await writer.add({ path: "f", data: "x", meta: { externalAttributes: 0 } });
       const bytes = await writer.close();
@@ -2192,17 +2337,17 @@ describe("ZipWriter", () => {
     const earlier = new Date("2024-05-01T00:00:00Z");
     const later = new Date("2024-07-01T00:00:00Z");
 
-    it.concurrent("rejects modifiedAt earlier than createdAt", async () => {
+    it("rejects modifiedAt earlier than createdAt", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "f", data: "x", meta: { createdAt: created, modifiedAt: earlier } })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("rejects lastAccess earlier than createdAt", async () => {
+    it("rejects lastAccess earlier than createdAt", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await expect(writer.add({ path: "f", data: "x", meta: { createdAt: created, modifiedAt: later, lastAccess: earlier } })).rejects.toThrow(RangeError);
     });
 
-    it.concurrent("accepts timestamps at or after createdAt", async () => {
+    it("accepts timestamps at or after createdAt", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
       await writer.add({ path: "f", data: "x", meta: { createdAt: created, modifiedAt: created, lastAccess: later } });
       const reader = await openZip(await writer.close());
@@ -2212,7 +2357,7 @@ describe("ZipWriter", () => {
 });
 
 describe("ZipTransformStream", () => {
-  it.concurrent("works as a WHATWG TransformStream", async () => {
+  it("works as a WHATWG TransformStream", async () => {
     const transform = new ZipTransformStream({ level: 0, zip64: "off" });
     const archivePromise = collect(transform.readable);
     const writer = transform.writable.getWriter();
@@ -2227,12 +2372,12 @@ describe("ZipTransformStream", () => {
     expect(await reader.get("b.txt")?.text()).toBe("B");
   });
 
-  it.concurrent("validates compression level", () => {
+  it("validates compression level", () => {
     expect(() => new ZipTransformStream({ level: -1 })).toThrow(RangeError);
     expect(() => new ZipTransformStream({ level: 10 })).toThrow(RangeError);
   });
 
-  it.concurrent("rejects duplicate paths", async () => {
+  it("rejects duplicate paths", async () => {
     const transform = new ZipTransformStream({ level: 0, zip64: "off" });
     const drain = collect(transform.readable).catch(() => byteArray([]));
     const writer = transform.writable.getWriter();
@@ -2244,7 +2389,7 @@ describe("ZipTransformStream", () => {
 });
 
 describe("openZip", () => {
-  it.concurrent("preserves duplicate paths from foreign archives in entries and returns latest from get", async () => {
+  it("preserves duplicate paths from foreign archives in entries and returns latest from get", async () => {
     const archive = buildDuplicateStoredArchive([
       { path: "dup.txt", data: "first" },
       { path: "dup.txt", data: "second" }
@@ -2256,7 +2401,7 @@ describe("openZip", () => {
     expect(await reader.get("dup.txt")?.text()).toBe("second");
   });
 
-  it.concurrent("accepts ArrayBuffer input and exposes byte helpers", async () => {
+  it("accepts ArrayBuffer input and exposes byte helpers", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "arraybuffer" });
 
     await writer.add({ path: "raw.bin", data: byteArray([1, 2, 3]) });
@@ -2268,7 +2413,7 @@ describe("openZip", () => {
     expectBytesEqual(byteArray(await entry.arrayBuffer()), byteArray([1, 2, 3]));
   });
 
-  it.concurrent("finds the real EOCD when archive comments contain EOCD-like bytes", async () => {
+  it("finds the real EOCD when archive comments contain EOCD-like bytes", async () => {
     const writer = new ZipWriter({
       level: 0,
       zip64: "off",
@@ -2284,7 +2429,7 @@ describe("openZip", () => {
     expect(await reader.get("comment.txt")?.text()).toBe("comment payload");
   });
 
-  it.concurrent("rejects unsafe paths by default and can sanitize them explicitly", async () => {
+  it("rejects unsafe paths by default and can sanitize them explicitly", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await writer.add({ path: "xx/evil.txt", data: "blocked" });
     const archive = await writer.close();
@@ -2306,7 +2451,7 @@ describe("openZip", () => {
     expect(await unsafe.get("../evil.txt")?.text()).toBe("blocked");
   });
 
-  it.concurrent("sanitizes absolute, drive-letter, backslash, and dot path components when requested", async () => {
+  it("sanitizes absolute, drive-letter, backslash, and dot path components when requested", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await writer.add({ path: "aa/root.txt", data: "absolute" });
     await writer.add({ path: "cc/app.txt", data: "drive" });
@@ -2328,7 +2473,7 @@ describe("openZip", () => {
     expect(await reader.get("dd/x.txt")?.text()).toBe("dot");
   });
 
-  it.concurrent("decodes legacy filenames with CP437 and TextDecoder fallbacks", async () => {
+  it("decodes legacy filenames with CP437 and TextDecoder fallbacks", async () => {
     const cases = [
       { encoding: "cp437", placeholder: "cafe.txt", bytes: [0x63, 0x61, 0x66, 0x82, 0x2e, 0x74, 0x78, 0x74], expected: "caf\u00e9.txt" },
       { encoding: "cp866", placeholder: "a.txt", bytes: [0xef, 0x2e, 0x74, 0x78, 0x74], expected: "\u044f.txt" },
@@ -2352,7 +2497,7 @@ describe("openZip", () => {
     }
   });
 
-  it.concurrent("returns independent streams for random-access entries", async () => {
+  it("returns independent streams for random-access entries", async () => {
     const writer = new ZipWriter({ level: 6, outputAs: "blob" });
 
     await writer.add({ path: "multi.txt", data: "multi-use stream" });
@@ -2366,7 +2511,7 @@ describe("openZip", () => {
     expect(await entry?.text()).toBe("multi-use stream");
   });
 
-  it.concurrent("rejects entry access after close", async () => {
+  it("rejects entry access after close", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "blob" });
 
     await writer.add({ path: "closed.txt", data: "closed" });
@@ -2381,7 +2526,7 @@ describe("openZip", () => {
     await expect(entry.text()).rejects.toThrow(DOMException);
   });
 
-  it.concurrent("rejects encrypted and unsupported compression method central-directory entries", async () => {
+  it("rejects encrypted and unsupported compression method central-directory entries", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await writer.add({ path: "plain.txt", data: "plain" });
     const archive = await writer.close();
@@ -2397,7 +2542,29 @@ describe("openZip", () => {
   });
 
   describe("central directory consistency", () => {
-    it.concurrent("rejects an EOCD entry count that overstates the directory", async () => {
+    // The 16-bit EOCD entry-count boundary is covered without large builds:
+    //   * writer's ZIP64-upgrade decision at 0xffff/0x10000 and the 64-bit count
+    //     it writes -> "auto emits ZIP64 exactly when the entry count overflows
+    //     the 16-bit EOCD field" (forges the running count).
+    //   * reader taking the count from the ZIP64 EOCD when the 16-bit field is
+    //     saturated -> the small forced-ZIP64 read tests (a forced archive always
+    //     writes 0xffff into the 16-bit EOCD count).
+    //   * parsing a real ~65k-record directory -> the yauzl-issue-108-ffff fixture.
+    // Building a real >65535-entry archive here only re-exercised those same code
+    // paths at ~770ms, so it is intentionally omitted.
+    it("selects the real EOCD when the archive comment begins with an EOCD-signature pattern", async () => {
+      // A 22-byte comment whose first four bytes match the EOCD signature creates a
+      // spurious candidate at EOF-22; findEocd must pick the real EOCD via content
+      // coherence instead.
+      const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "off", comment: "PK\x05\x06" + "\x00".repeat(18) });
+      await writer.add({ path: "a.txt", data: "hello" });
+      const archive = await writer.close();
+      const reader = await openZip(archive);
+      expect(reader.entries).toHaveLength(1);
+      expect(await reader.get("a.txt")?.text()).toBe("hello");
+    });
+
+    it("rejects an EOCD entry count that overstates the directory", async () => {
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
       const eocd = eocdOffset(bytes);
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -2406,7 +2573,7 @@ describe("openZip", () => {
       await expect(openZip(bytes)).rejects.toThrow(/entry count mismatch/i);
     });
 
-    it.concurrent("rejects an EOCD central-directory size that does not match the entries", async () => {
+    it("rejects an EOCD central-directory size that does not match the entries", async () => {
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
       const eocd = eocdOffset(bytes);
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -2415,14 +2582,14 @@ describe("openZip", () => {
       await expect(openZip(bytes)).rejects.toThrow(/size mismatch/i);
     });
 
-    it.concurrent("still reads a well-formed archive", async () => {
+    it("still reads a well-formed archive", async () => {
       const reader = await openZip(buildArchive([{ path: "a.txt", data: "hello" }]));
       expect(await reader.get("a.txt")?.text()).toBe("hello");
     });
   });
 
   describe("bounds hardening", () => {
-    it.concurrent("rejects a central-directory offset pointing outside the archive", async () => {
+    it("rejects a central-directory offset pointing outside the archive", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await writer.add({ path: "ok.txt", data: "ok" });
       const archive = byteArray(await writer.close());
@@ -2433,7 +2600,7 @@ describe("openZip", () => {
       await expect(openZip(archive)).rejects.toThrow(/outside ZIP bounds/);
     });
 
-    it.concurrent("rejects a local payload range that runs past the archive", async () => {
+    it("rejects a local payload range that runs past the archive", async () => {
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
       await writer.add({ path: "ok.txt", data: "hello" });
       const archive = byteArray(await writer.close());
@@ -2446,7 +2613,7 @@ describe("openZip", () => {
   });
 
   describe("decompression safeguards", () => {
-    it.concurrent("reports a corrupt deflate stream distinctly (not as unsupported runtime)", async () => {
+    it("reports a corrupt deflate stream distinctly (not as unsupported runtime)", async () => {
       const bytes = buildArchive([{ path: "big.txt", data: "a".repeat(2000) }]);
       const local = findSignature(bytes, 0x04034b50);
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -2464,26 +2631,26 @@ describe("openZip", () => {
       expect(error!.message).not.toMatch(/does not support/i);
     });
 
-    it.concurrent("rejects an entry whose decompressed size exceeds maxEntrySize", async () => {
+    it("rejects an entry whose decompressed size exceeds maxEntrySize", async () => {
       const bytes = buildArchive([{ path: "big.txt", data: "a".repeat(100_000) }]);
       const reader = await openZip(bytes, { maxEntrySize: 1000 });
       await expect(reader.get("big.txt")!.bytes()).rejects.toThrow(/maxEntrySize/i);
     });
 
-    it.concurrent("reads normally when within maxEntrySize", async () => {
+    it("reads normally when within maxEntrySize", async () => {
       const bytes = buildArchive([{ path: "big.txt", data: "a".repeat(100_000) }]);
       const reader = await openZip(bytes, { maxEntrySize: 1_000_000 });
       expect((await reader.get("big.txt")!.bytes()).length).toBe(100_000);
     });
 
-    it.concurrent("rejects an archive larger than maxArchiveSize", async () => {
+    it("rejects an archive larger than maxArchiveSize", async () => {
       const bytes = buildArchive([{ path: "a.txt", data: "hello" }]);
       await expect(openZip(bytes, { maxArchiveSize: 1 })).rejects.toThrow(/maxArchiveSize/i);
     });
   });
 
   describe("byte access", () => {
-    it.concurrent("round-trips arraybuffer output exactly", async () => {
+    it("round-trips arraybuffer output exactly", async () => {
       const writer = new ZipWriter({ level: 6, outputAs: "arraybuffer" });
       await writer.add({ path: "data.txt", data: "round trip me".repeat(50) });
       const archive = await writer.close();
@@ -2496,7 +2663,7 @@ describe("openZip", () => {
 });
 
 describe("readZipStream", () => {
-  it.concurrent("iterates entries and exposes single-use text tokens", async () => {
+  it("iterates entries and exposes single-use text tokens", async () => {
     const writer = new ZipWriter({ level: 6 });
 
     await writer.add({ path: "one.txt", data: "one" });
@@ -2512,7 +2679,7 @@ describe("readZipStream", () => {
     expect(seen).toEqual(["one.txt:one", "two.txt:two"]);
   });
 
-  it.concurrent("supports explicit skip tokens", async () => {
+  it("supports explicit skip tokens", async () => {
     const writer = new ZipWriter({ level: 6 });
 
     await writer.add({ path: "skip.txt", data: "skip me" });
@@ -2524,7 +2691,7 @@ describe("readZipStream", () => {
     }
   });
 
-  it.concurrent("exposes single-use byte helpers for stream entries", async () => {
+  it("exposes single-use byte helpers for stream entries", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off" });
 
     await writer.add({ path: "bytes.bin", data: byteArray([4, 5, 6]) });
@@ -2536,7 +2703,7 @@ describe("readZipStream", () => {
     }
   });
 
-  it.concurrent("exposes parsed external attributes and derived unix modes on stream entries", async () => {
+  it("exposes parsed external attributes and derived unix modes on stream entries", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off" });
 
     await writer.add({ path: "bin/run.sh", data: "#!/bin/sh\n", meta: { unixPermissions: 0o755 } });
@@ -2549,7 +2716,7 @@ describe("readZipStream", () => {
     }
   });
 
-  it.concurrent("exposes parsed comments, extra fields, dates, and directories on stream entries", async () => {
+  it("exposes parsed comments, extra fields, dates, and directories on stream entries", async () => {
     const modifiedAt = absoluteDate("2022-02-03T04:05:06Z");
     const extraField = byteArray([0x10, 0x20, 0x02, 0x00, 0xaa, 0xbb]);
     const writer = new ZipWriter({ level: 0, zip64: "off" });
@@ -2577,7 +2744,7 @@ describe("readZipStream", () => {
 // branches that are otherwise difficult to reach.
 
 describe("DEFLATE block selection", () => {
-  it.concurrent("emits a fixed-Huffman block when fixed codes are cheaper than a dynamic header", async () => {
+  it("emits a fixed-Huffman block when fixed codes are cheaper than a dynamic header", async () => {
     const archive = await buildDeflatedArchive([{ path: "fixed.txt", data: "abababababababab", method: "deflate", level: 6 }]);
     const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
 
@@ -2586,7 +2753,7 @@ describe("DEFLATE block selection", () => {
     expect(await (await openZip(archive)).get("fixed.txt")!.text()).toBe("abababababababab");
   });
 
-  it.concurrent("splits a large entry into multiple DEFLATE blocks and toggles the final-block flag", async () => {
+  it("splits a large entry into multiple DEFLATE blocks and toggles the final-block flag", async () => {
     let text = "";
     for (let index = 0; index < 40000; index++) {
       text += `line-${index}-${(Math.imul(index, 2654435761) >>> 0).toString(16)}\n`;
@@ -2600,7 +2767,7 @@ describe("DEFLATE block selection", () => {
     expect(await entry.text()).toBe(text);
   });
 
-  it.concurrent("emits multiple stored sub-blocks for incompressible input larger than 65535 bytes", async () => {
+  it("emits multiple stored sub-blocks for incompressible input larger than 65535 bytes", async () => {
     const length = 200_000;
     const data = new Uint8Array(length) as TestBytes;
     let state = 0x12345678 >>> 0;
@@ -2623,7 +2790,7 @@ describe("DEFLATE block selection", () => {
 });
 
 describe("writer validation and output completeness", () => {
-  it.concurrent("rejects an oversized extra field and an oversized archive comment", async () => {
+  it("rejects an oversized extra field and an oversized archive comment", async () => {
     const extraWriter = new ZipWriter({ outputAs: "uint8array" });
     await expect(extraWriter.add({ path: "f.txt", data: "x", meta: { extraField: new Uint8Array(70000) as TestBytes } }))
       .rejects.toThrow(/extra field must fit in 65535/i);
@@ -2633,7 +2800,7 @@ describe("writer validation and output completeness", () => {
     await expect(commentWriter.close()).rejects.toThrow(/archive comment must fit in 65535/i);
   });
 
-  it.concurrent("rejects an invalid per-entry level for both add() and writeSync()", async () => {
+  it("rejects an invalid per-entry level for both add() and writeSync()", async () => {
     const asyncWriter = new ZipWriter({ outputAs: "uint8array" });
     await expect(asyncWriter.add({ path: "f.txt", data: "x", level: 99 })).rejects.toThrow(RangeError);
 
@@ -2641,7 +2808,7 @@ describe("writer validation and output completeness", () => {
     expect(() => syncWriter.writeSync({ path: "f.txt", data: "x", level: 99 })).toThrow(RangeError);
   });
 
-  it.concurrent("rejects unsupported data types", async () => {
+  it("rejects unsupported data types", async () => {
     const asyncWriter = new ZipWriter({ outputAs: "uint8array" });
     await expect(asyncWriter.add({ path: "f.txt", data: 12345 as unknown as string })).rejects.toThrow(TypeError);
 
@@ -2649,7 +2816,7 @@ describe("writer validation and output completeness", () => {
     expect(() => syncWriter.writeSync({ path: "f.txt", data: new Blob(["hi"]) as unknown as string })).toThrow(TypeError);
   });
 
-  it.concurrent("supports closeSync with arraybuffer output and with the default stream output", async () => {
+  it("supports closeSync with arraybuffer output and with the default stream output", async () => {
     const bufferWriter = new ZipWriter({ outputAs: "arraybuffer", level: 0, zip64: "off" });
     bufferWriter.writeSync({ path: "a.txt", data: "hi" });
     const buffer = bufferWriter.closeSync();
@@ -2662,7 +2829,7 @@ describe("writer validation and output completeness", () => {
     expect(stream).toBeInstanceOf(ReadableStream);
   });
 
-  it.concurrent("strict writer accepts a safe path and sanitize rejects a path that sanitizes to empty", async () => {
+  it("strict writer accepts a safe path and sanitize rejects a path that sanitizes to empty", async () => {
     const strict = new ZipWriter({ outputAs: "uint8array", pathMode: "strict" });
     await strict.add({ path: "safe/file.txt", data: "ok" });
     expect(await (await openZip(byteArray(await strict.close()))).get("safe/file.txt")!.text()).toBe("ok");
@@ -2671,7 +2838,7 @@ describe("writer validation and output completeness", () => {
     await expect(sanitize.add({ path: "../../", data: "" })).rejects.toThrow(/unsafe zip entry path/i);
   });
 
-  it.concurrent("rejects duplicate paths while writing", async () => {
+  it("rejects duplicate paths while writing", async () => {
     const asyncWriter = new ZipWriter({ outputAs: "uint8array" });
     await asyncWriter.add({ path: "dup.txt", data: "first" });
     await expect(asyncWriter.add({ path: "dup.txt", data: "second" })).rejects.toThrow(/duplicate zip entry path/i);
@@ -2683,17 +2850,17 @@ describe("writer validation and output completeness", () => {
 });
 
 describe("reader structural validation gaps", () => {
-  it.concurrent("rejects input with no end-of-central-directory record", async () => {
+  it("rejects input with no end-of-central-directory record", async () => {
     await expect(openZip(encode("this is definitely not a zip archive"))).rejects.toThrow(/end of central directory not found/i);
   });
 
-  it.concurrent("rejects a corrupt central-directory header signature", async () => {
+  it("rejects a corrupt central-directory header signature", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes), 0xdeadbeef, true);
     await expect(openZip(bytes)).rejects.toThrow(/invalid central directory header/i);
   });
 
-  it.concurrent("rejects a corrupt local file header signature", async () => {
+  it("rejects a corrupt local file header signature", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(localHeaderOffset(bytes), 0xdeadbeef, true);
     await expect(openZip(bytes)).rejects.toThrow(/invalid local file header/i);
@@ -2701,7 +2868,7 @@ describe("reader structural validation gaps", () => {
 });
 
 describe("eager local-payload resolution", () => {
-  it.concurrent("rejects the whole archive at open if any entry's local header is corrupt, regardless of position", async () => {
+  it("rejects the whole archive at open if any entry's local header is corrupt, regardless of position", async () => {
     for (const target of ["first", "last"] as const) {
       const bytes = buildStoredArchive([{ path: "a.txt", data: "A" }, { path: "b.txt", data: "B" }, { path: "c.txt", data: "C" }]);
       const offsets = centralLocalHeaderOffsets(bytes);
@@ -2711,7 +2878,7 @@ describe("eager local-payload resolution", () => {
     }
   });
 
-  it.concurrent("readZipStream throws as iteration begins, before yielding any entry", async () => {
+  it("readZipStream throws as iteration begins, before yielding any entry", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "A" }, { path: "b.txt", data: "B" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralLocalHeaderOffsets(bytes)[0], 0xdeadbeef, true);
     const stream = new ReadableStream<TestBytes>({
@@ -2731,7 +2898,7 @@ describe("eager local-payload resolution", () => {
     expect(yielded).toBe(0);
   });
 
-  it.concurrent("a fully consistent central directory does not mask a corrupt local header", async () => {
+  it("a fully consistent central directory does not mask a corrupt local header", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralLocalHeaderOffsets(bytes)[0], 0xdeadbeef, true);
     const error = await openZip(bytes).then(() => null, (e: Error) => e);
@@ -2741,13 +2908,13 @@ describe("eager local-payload resolution", () => {
     expect(error!.message).not.toMatch(/central directory/i);
   });
 
-  it.concurrent("validates the local header of a zero-payload directory entry too", async () => {
+  it("validates the local header of a zero-payload directory entry too", async () => {
     const bytes = buildStoredArchive([{ path: "dir/", data: "" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralLocalHeaderOffsets(bytes)[0], 0xdeadbeef, true);
     await expect(openZip(bytes)).rejects.toThrow(/invalid local file header/i);
   });
 
-  it.concurrent("resolves the payload from the local header's field lengths", async () => {
+  it("resolves the payload from the local header's field lengths", async () => {
     const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
     await writer.add({ path: "z.txt", data: "payload-data" });
     const bytes = byteArray(await writer.close());
@@ -2759,7 +2926,7 @@ describe("eager local-payload resolution", () => {
     expect(await (await openZip(bytes)).get("z.txt")!.text()).toBe("payload-data");
   });
 
-  it.concurrent("draws the eager/lazy line: signature and bounds at open, CRC at read", async () => {
+  it("draws the eager/lazy line: signature and bounds at open, CRC at read", async () => {
     const badSig = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(badSig.buffer, badSig.byteOffset, badSig.byteLength).setUint32(centralLocalHeaderOffsets(badSig)[0], 0xdeadbeef, true);
     await expect(openZip(badSig)).rejects.toThrow(/invalid local file header/i);
@@ -2780,7 +2947,7 @@ describe("eager local-payload resolution", () => {
 });
 
 describe("reader integrity checks", () => {
-  it.concurrent("rejects a CRC32 mismatch", async () => {
+  it("rejects a CRC32 mismatch", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const central = centralDirectoryOffset(bytes);
@@ -2790,7 +2957,7 @@ describe("reader integrity checks", () => {
     await expect(reader.get("a.txt")!.bytes()).rejects.toThrow(/crc32 mismatch/i);
   });
 
-  it.concurrent("rejects a stored entry whose declared size disagrees with its bytes", async () => {
+  it("rejects a stored entry whose declared size disagrees with its bytes", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 3, true);
 
@@ -2798,7 +2965,7 @@ describe("reader integrity checks", () => {
     await expect(reader.get("a.txt")!.bytes()).rejects.toThrow(/size mismatch/i);
   });
 
-  it.concurrent("rejects a deflate entry whose inflated length disagrees with the header", async () => {
+  it("rejects a deflate entry whose inflated length disagrees with the header", async () => {
     const archive = await buildDeflatedArchive([{ path: "d.txt", data: "compress me ".repeat(50), level: 6 }]);
     const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
     const central = centralDirectoryOffset(archive);
@@ -2810,19 +2977,19 @@ describe("reader integrity checks", () => {
 });
 
 describe("ZIP64 parse errors", () => {
-  it.concurrent("rejects a saturated 32-bit size with no ZIP64 extra to supply it", async () => {
-    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+  it("rejects a saturated 32-bit size with no ZIP64 extra when the local header uses a data descriptor", async () => {
+    const bytes = buildDataDescriptorZip([{ path: "a.txt", data: encode("hello"), method: 0 }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
     await expect(openZip(bytes)).rejects.toThrow(/zip64 uncompressed size is missing/i);
   });
 
-  it.concurrent("rejects a ZIP64-signalling EOCD with no locator", async () => {
+  it("rejects a ZIP64-signalling EOCD size with no locator", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
-    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint16(realEndOfCentralDirectoryOffset(bytes) + 10, 0xffff, true);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(realEndOfCentralDirectoryOffset(bytes) + 12, 0xffffffff, true);
     await expect(openZip(bytes)).rejects.toThrow(/zip64 locator is missing/i);
   });
 
-  it.concurrent("rejects a corrupt ZIP64 EOCD record behind a valid locator", async () => {
+  it("rejects a corrupt ZIP64 EOCD record behind a valid locator", async () => {
     const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
     await writer.add({ path: "z.txt", data: "payload" });
     const archive = byteArray(await writer.close());
@@ -2831,7 +2998,7 @@ describe("ZIP64 parse errors", () => {
     await expect(openZip(archive)).rejects.toThrow(/zip64 eocd record is invalid/i);
   });
 
-  it.concurrent("treats a ZIP64 extra whose declared length overruns the field as absent", async () => {
+  it("rejects a ZIP64 extra whose declared length overruns the field", async () => {
     const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
     await writer.add({ path: "z.txt", data: "payload" });
     const archive = byteArray(await writer.close());
@@ -2843,10 +3010,100 @@ describe("ZIP64 parse errors", () => {
     view.setUint16(extraStart + 2, 0xffff, true);
     await expect(openZip(archive)).rejects.toThrow(/zip64 uncompressed size is missing/i);
   });
+
+  // The positive central-directory 0xffffffff uncompressed/compressed-size
+  // sentinel cases (yauzl #109) live in test/yauzl-109-zip64-sentinel.test.ts as
+  // fast synthetic unit tests; we still keep the following test_109a1 and test_109a2 for simple checks.
+
+  // test_109a1
+  it("interoperability: allows a central-directory uncompressed size of 0xffffffff without ZIP64 extra data", async () => {
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  // test_109a2
+  it("interoperability: allows a central-directory compressed size of 0xffffffff without ZIP64 extra data", async () => {
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it.skip("interoperability: allows a central-directory local-header offset of 0xffffffff without ZIP64 extra data", async () => {
+    // Companion to yauzl issue #109. A meaningful positive test needs a real
+    // archive whose local header actually starts at offset 0xffffffff, which is
+    // not practical to synthesize in-memory in this suite.
+    const bytes = buildStoredArchive([
+      { path: "pad.bin", data: "pad" },
+      { path: "a.txt", data: "hello" }
+    ]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 42, 0xffffffff, true);
+
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it("rejects a saturated 32-bit compressed size with no ZIP64 extra when the local header uses a data descriptor", async () => {
+    // Companion to the uncompressed-size test above: when bit 3 (data descriptor)
+    // is set, local sizes are zero and there is no fallback path.
+    const bytes = buildDataDescriptorZip([{ path: "a.txt", data: encode("hello"), method: 0 }]);
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 compressed size is missing/i);
+  });
+
+  it("rejects a saturated 32-bit uncompressed size when the local header also reports 0xffffffff and no data descriptor is used", async () => {
+    // Both central-dir and local-header sizes are saturated with no ZIP64 extra
+    // and bit 3 clear: there is no recoverable source for the real size.
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
+    view.setUint32(localHeaderOffset(bytes) + 22, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 uncompressed size is missing/i);
+  });
+
+  it("rejects a saturated 32-bit compressed size when the local header also reports 0xffffffff and no data descriptor is used", async () => {
+    // Same as above but for the compressed size field.
+    const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);
+    view.setUint32(localHeaderOffset(bytes) + 18, 0xffffffff, true);
+    await expect(openZip(bytes)).rejects.toThrow(/zip64 compressed size is missing/i);
+  });
+
+  it("accepts a ZIP64 archive where the EOCD locator's total-disks field is 0 instead of 1 (Python-compatible)", async () => {
+    // Python < 3.12 wrote 0 here instead of the correct 1 (cpython bpo-22102).
+    // JSZipp does not read the total-disks field, so such archives must open fine.
+    const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "force" });
+    await writer.add({ path: "a.txt", data: "hello" });
+    const archive = byteArray(await writer.close());
+    new DataView(archive.buffer, archive.byteOffset, archive.byteLength).setUint32(findSignature(archive, 0x07064b50) + 16, 0, true);
+    const reader = await openZip(archive);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it("accepts a central-directory ZIP64 extra field with a zero-byte body when no sizes are saturated (Ant/Commons Compress compatible)", async () => {
+    // Apache Ant and older Commons Compress write id=0x0001, size=0 even when no
+    // fields are saturated. parseZip64Extra returns [] and no shift() is called.
+    const bytes = buildArchiveWithEmptyZip64Extra([{ path: "a.txt", data: "hello" }]);
+    const reader = await openZip(bytes);
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
+
+  it("reads a central-directory entry where only the local-header offset field is carried in the ZIP64 extra", async () => {
+    // Saturated localOffset (0xffffffff) in the central directory with ZIP64 extra
+    // containing only [realOffset]. The size fields are not saturated and are read
+    // from the 32-bit central-directory slots without consuming ZIP64 extra values.
+    const reader = await openZip(buildZip64LocalOffsetOnlyArchive());
+    expect(await reader.get("a.txt")?.text()).toBe("hello");
+  });
 });
 
 describe("size caps", () => {
-  it.concurrent("enforces maxEntrySize during inflation even when the header understates the size", async () => {
+  it("enforces maxEntrySize during inflation even when the header understates the size", async () => {
     const archive = await buildDeflatedArchive([{ path: "z.txt", data: "a".repeat(50_000), level: 6 }]);
     new DataView(archive.buffer, archive.byteOffset, archive.byteLength).setUint32(centralDirectoryOffset(archive) + 24, 100, true);
 
@@ -2854,7 +3111,7 @@ describe("size caps", () => {
     await expect(reader.get("z.txt")!.bytes()).rejects.toThrow(/exceeds limit|exceeds maxEntrySize/i);
   });
 
-  it.concurrent("rejects an oversized archive in readZipStream", async () => {
+  it("rejects an oversized archive in readZipStream", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     const stream = new ReadableStream<TestBytes>({
       start: (controller) => {
@@ -2870,7 +3127,14 @@ describe("size caps", () => {
 });
 
 describe("reader misc branches", () => {
-  it.concurrent("throws immediately for an already-aborted signal", async () => {
+  it("reads an empty ZIP archive with zero entries", async () => {
+    const writer = new ZipWriter({ outputAs: "uint8array", level: 0, zip64: "off" });
+    const archive = writer.closeSync() as TestBytes;
+    const reader = await openZip(archive);
+    expect(reader.entries).toHaveLength(0);
+  });
+
+  it("throws immediately for an already-aborted signal", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     const controller = new AbortController();
     controller.abort();
@@ -2878,12 +3142,12 @@ describe("reader misc branches", () => {
     await expect(openZip(bytes, { signal: controller.signal })).rejects.toThrow();
   });
 
-  it.concurrent("get() falls back to the normalized path", async () => {
+  it("get() falls back to the normalized path", async () => {
     const reader = await openZip(buildStoredArchive([{ path: "dir/sub/f.txt", data: "v" }]));
     expect(await reader.get("dir\\sub\\f.txt")!.text()).toBe("v");
   });
 
-  it.concurrent("accepts a custom TextDecoder-shaped object as filenameEncoding", async () => {
+  it("accepts a custom TextDecoder-shaped object as filenameEncoding", async () => {
     const bytes = buildStoredArchive([{ path: "x.txt", data: "v" }]);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     view.setUint16(6, 0, true);
@@ -2906,7 +3170,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
   const createdAt = absoluteDate("2020-01-15T08:00:00.000Z");
   const lastAccess = absoluteDate("2026-06-03T12:30:00.000Z");
 
-  it.concurrent("default mode (dos+unix) writes the 0x5455 extra but no NTFS extra", async () => {
+  it("default mode (dos+unix) writes the 0x5455 extra but no NTFS extra", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await writer.add({ path: "u.txt", data: "x", meta: { modifiedAt } });
     const archive = await writer.close();
@@ -2924,7 +3188,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
     expect(entry.lastAccess).toBeUndefined();
   });
 
-  it.concurrent("dos mode writes neither the 0x5455 nor the NTFS extra", async () => {
+  it("dos mode writes neither the 0x5455 nor the NTFS extra", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
     await writer.add({ path: "d.txt", data: "x", meta: { modifiedAt } });
     const archive = await writer.close();
@@ -2937,7 +3201,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
     expect(extraFieldPayload(extras!.centralExtra, 0x000a), "dos central NTFS").toBeUndefined();
   });
 
-  it.concurrent("dos+ntfs writes the NTFS extra (and no 0x5455) and round-trips mtime/ctime/atime", async () => {
+  it("dos+ntfs writes the NTFS extra (and no 0x5455) and round-trips mtime/ctime/atime", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await writer.add({ path: "ntfs.txt", data: "x", meta: { modifiedAt, createdAt, lastAccess } });
     const archive = await writer.close();
@@ -2966,7 +3230,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
     expect(entry.lastAccess?.toISOString()).toBe(lastAccess.toISOString());
   });
 
-  it.concurrent("dos+unix+ntfs writes both the 0x5455 and NTFS extras", async () => {
+  it("dos+unix+ntfs writes both the 0x5455 and NTFS extras", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix | TimestampMode.Ntfs });
     await writer.add({ path: "both.txt", data: "x", meta: { modifiedAt, createdAt, lastAccess } });
     const archive = await writer.close();
@@ -2984,7 +3248,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
       { label: "dos+ntfs", mode: TimestampMode.Dos | TimestampMode.Ntfs },
       { label: "dos+unix+ntfs", mode: TimestampMode.Dos | TimestampMode.Unix | TimestampMode.Ntfs }
     ] as const) {
-      it.concurrent(`${label} defaults both createdAt and lastAccess to modifiedAt when neither is given`, async () => {
+      it(`${label} defaults both createdAt and lastAccess to modifiedAt when neither is given`, async () => {
         const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: mode });
         await writer.add({ path: "x.txt", data: "x", meta: { modifiedAt } });
         const entry = (await openZip(await writer.close())).get("x.txt")!;
@@ -2992,7 +3256,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
         expect(entry.lastAccess?.toISOString()).toBe(modifiedAt.toISOString());
       });
 
-      it.concurrent(`${label} defaults only lastAccess when createdAt is provided`, async () => {
+      it(`${label} defaults only lastAccess when createdAt is provided`, async () => {
         const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: mode });
         await writer.add({ path: "x.txt", data: "x", meta: { modifiedAt, createdAt } });
         const entry = (await openZip(await writer.close())).get("x.txt")!;
@@ -3000,7 +3264,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
         expect(entry.lastAccess?.toISOString()).toBe(modifiedAt.toISOString());
       });
 
-      it.concurrent(`${label} defaults only createdAt when lastAccess is provided`, async () => {
+      it(`${label} defaults only createdAt when lastAccess is provided`, async () => {
         const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: mode });
         await writer.add({ path: "x.txt", data: "x", meta: { modifiedAt, lastAccess } });
         const entry = (await openZip(await writer.close())).get("x.txt")!;
@@ -3011,7 +3275,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
   });
 
   describe("reader timestamp precedence", () => {
-    it.concurrent("prefers the UNIX 0x5455 mtime over the DOS fields when no NTFS extra is present", async () => {
+    it("prefers the UNIX 0x5455 mtime over the DOS fields when no NTFS extra is present", async () => {
       // An odd second is rounded down by the 2-second DOS field, so the exact
       // second can only come from the 0x5455 extra. Reading it back exactly
       // proves UNIX was chosen over DOS.
@@ -3022,7 +3286,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
       expect(entry.modifiedAt?.toISOString()).toBe(oddSecond.toISOString());
     });
 
-    it.concurrent("prefers NTFS over UNIX and DOS when createdAt and lastAccess are both present", async () => {
+    it("prefers NTFS over UNIX and DOS when createdAt and lastAccess are both present", async () => {
       // Inject a conflicting 0x5455 (different instant) via meta.extraField, so
       // the archive carries a UNIX time that disagrees with the NTFS mtime. The
       // reader must report the NTFS values, not the UNIX one.
@@ -3047,7 +3311,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
       expect(entry.modifiedAt?.toISOString()).not.toBe(conflictingUnix.toISOString());
     });
 
-    it.concurrent("ignores a partial NTFS extra (missing createdAt/lastAccess) and falls back to UNIX", async () => {
+    it("ignores a partial NTFS extra (missing createdAt/lastAccess) and falls back to UNIX", async () => {
       // A 0x000a field that carries only mtime is not authoritative; the reader
       // should fall through to the 0x5455 mtime and leave created/access unset.
       const unixModified = absoluteDate("2026-06-02T01:14:35.000Z");
@@ -3073,7 +3337,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
       expect(entry.lastAccess).toBeUndefined();
     });
 
-    it.concurrent("falls back to the DOS fields when neither NTFS nor UNIX is present", async () => {
+    it("falls back to the DOS fields when neither NTFS nor UNIX is present", async () => {
       const evenSecond = absoluteDate("2026-06-02T01:14:34.000Z");
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
       await writer.add({ path: "donly.txt", data: "x", meta: { modifiedAt: evenSecond } });
@@ -3089,7 +3353,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
   });
 
   describe("caller-supplied timestamp extras are not duplicated", () => {
-    it.concurrent("keeps a caller-supplied 0x5455 and does not append its own under a unix mode", async () => {
+    it("keeps a caller-supplied 0x5455 and does not append its own under a unix mode", async () => {
       // The caller's Extended Timestamp differs from modifiedAt, so if the writer
       // wrongly added its own there would be two 0x5455 fields and the first
       // (caller's) value would not be the only one present.
@@ -3109,7 +3373,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
       expect(extendedTimestampSeconds(extras.centralExtra)).toBe(Math.floor(callerUnix.getTime() / 1000));
     });
 
-    it.concurrent("keeps a caller-supplied 0x000a and does not append its own (nor require createdAt/lastAccess) under an ntfs mode", async () => {
+    it("keeps a caller-supplied 0x000a and does not append its own (nor require createdAt/lastAccess) under an ntfs mode", async () => {
       // Supplying the NTFS extra also suppresses the createdAt/lastAccess
       // requirement, since the writer skips building its own field entirely.
       const callerModified = absoluteDate("2001-02-03T04:05:06.000Z");
@@ -3141,7 +3405,7 @@ describe("timestamps modes (DOS / UNIX / NTFS)", () => {
 });
 
 describe("unixPermissions require the unix timestamp mode", () => {
-  it.concurrent("rejects unixPermissions when the Unix flag is absent (DOS-only or NTFS-only)", async () => {
+  it("rejects unixPermissions when the Unix flag is absent (DOS-only or NTFS-only)", async () => {
     const dosOnly = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
     await expect(dosOnly.add({ path: "f", data: "x", meta: { unixPermissions: 0o644 } })).rejects.toThrow(RangeError);
     const ntfsNoUnix = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
@@ -3150,14 +3414,14 @@ describe("unixPermissions require the unix timestamp mode", () => {
 });
 
 describe("dos attributes", () => {
-  it.concurrent("records dos attributes in the low byte under an NTFS mode", async () => {
+  it("records dos attributes in the low byte under an NTFS mode", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await writer.add({ path: "f.txt", data: "x", meta: { dosAttributes: 0x21 } });
     const reader = await openZip(await writer.close());
     expect(reader.get("f.txt")!.externalAttributes! & 0xff).toBe(0x21);
   });
 
-  it.concurrent("records dos attributes in plain DOS-only mode", async () => {
+  it("records dos attributes in plain DOS-only mode", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos });
     await writer.add({ path: "f.txt", data: "x", meta: { dosAttributes: 0x21 } });
     const ea = (await openZip(await writer.close())).get("f.txt")!.externalAttributes!;
@@ -3165,7 +3429,7 @@ describe("dos attributes", () => {
     expect(ea >>> 16).toBe(0); // no unix mode in DOS-only mode
   });
 
-  it.concurrent("preserves a caller directory bit that matches a directory entry", async () => {
+  it("preserves a caller directory bit that matches a directory entry", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await writer.add({ path: "d/", data: "", meta: { dosAttributes: 0x10 | 0x20 } });
     const low = (await openZip(await writer.close())).get("d/")!.externalAttributes! & 0xff;
@@ -3173,7 +3437,7 @@ describe("dos attributes", () => {
     expect(low & 0x20).toBe(0x20); // caller-supplied archive bit preserved
   });
 
-  it.concurrent("carries both the unix mode and dos attributes when unix+ntfs are set", async () => {
+  it("carries both the unix mode and dos attributes when unix+ntfs are set", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix | TimestampMode.Ntfs });
     await writer.add({ path: "f.txt", data: "x", meta: { unixPermissions: 0o640, dosAttributes: 0x01 } });
     const ea = (await openZip(await writer.close())).get("f.txt")!.externalAttributes!;
@@ -3181,7 +3445,7 @@ describe("dos attributes", () => {
     expect(ea & 0xff).toBe(0x01); // dos attributes in the low byte
   });
 
-  it.concurrent("does not flip version-made-by to a unix host on its own", async () => {
+  it("does not flip version-made-by to a unix host on its own", async () => {
     // NTFS-only (no unix mode) -> external-attrs high 16 == 0 -> DOS host (0).
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await writer.add({ path: "f.txt", data: "x", meta: { dosAttributes: 0x21 } });
@@ -3190,12 +3454,12 @@ describe("dos attributes", () => {
     expect(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(central + 4, true) >>> 8).toBe(0);
   });
 
-  it.concurrent("rejects dos attributes when the Unix flag is set without the NTFS flag", async () => {
+  it("rejects dos attributes when the Unix flag is set without the NTFS flag", async () => {
     const unixOnly = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Unix });
     await expect(unixOnly.add({ path: "f", data: "x", meta: { dosAttributes: 0x01 } })).rejects.toThrow(RangeError);
   });
 
-  it.concurrent("rejects a directory bit that conflicts with the entry type", async () => {
+  it("rejects a directory bit that conflicts with the entry type", async () => {
     // File entry with the directory bit set -> conflict.
     const w1 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await expect(w1.add({ path: "f", data: "x", meta: { dosAttributes: 0x10 } })).rejects.toThrow(RangeError);
@@ -3204,7 +3468,7 @@ describe("dos attributes", () => {
     await expect(w2.add({ path: "d/", data: "", meta: { dosAttributes: 0x20 } })).rejects.toThrow(RangeError);
   });
 
-  it.concurrent("rejects out-of-range values", async () => {
+  it("rejects out-of-range values", async () => {
     const w1 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
     await expect(w1.add({ path: "f", data: "x", meta: { dosAttributes: 0x100 } })).rejects.toThrow(RangeError);
     const w2 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", timestamps: TimestampMode.Dos | TimestampMode.Ntfs });
@@ -3213,20 +3477,20 @@ describe("dos attributes", () => {
 });
 
 describe("public option range validation", () => {
-  it.concurrent("rejects a timestamps bitmask outside 0..7", () => {
+  it("rejects a timestamps bitmask outside 0..7", () => {
     expect(() => new ZipWriter({ timestamps: 8 })).toThrow(RangeError);
     expect(() => new ZipWriter({ timestamps: -1 })).toThrow(RangeError);
     expect(() => new ZipWriter({ timestamps: 1.5 })).toThrow(RangeError);
   });
 
-  it.concurrent("rejects negative or invalid entry timestamps", async () => {
+  it("rejects negative or invalid entry timestamps", async () => {
     const w1 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await expect(w1.add({ path: "f", data: "x", meta: { modifiedAt: new Date("1969-01-01T00:00:00Z") } })).rejects.toThrow(RangeError);
     const w2 = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await expect(w2.add({ path: "f", data: "x", meta: { modifiedAt: new Date("not a date") } })).rejects.toThrow(RangeError);
   });
 
-  it.concurrent("rejects negative reader size caps", async () => {
+  it("rejects negative reader size caps", async () => {
     const bytes = buildArchive([{ path: "a.txt", data: "x" }]);
     await expect(openZip(bytes, { maxArchiveSize: -1 })).rejects.toThrow(RangeError);
     await expect(openZip(bytes, { maxEntrySize: -5 })).rejects.toThrow(RangeError);
@@ -3234,14 +3498,14 @@ describe("public option range validation", () => {
 });
 
 describe("explicitDirectoryEntries", () => {
-  it.concurrent("is off by default: implied parent directories are not materialized", async () => {
+  it("is off by default: implied parent directories are not materialized", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
     await writer.add({ path: "a/b/c.txt", data: "x" });
     const reader = await openZip(await writer.close());
     expect(reader.entries.map((e) => e.path)).toEqual(["a/b/c.txt"]);
   });
 
-  it.concurrent("synthesizes implied parent directories, in order, when enabled", async () => {
+  it("synthesizes implied parent directories, in order, when enabled", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", explicitDirectoryEntries: true });
     await writer.add({ path: "a/b/c.txt", data: "x" });
     const reader = await openZip(await writer.close());
@@ -3250,7 +3514,7 @@ describe("explicitDirectoryEntries", () => {
     expect(reader.get("a/b/")!.isDirectory).toBe(true);
   });
 
-  it.concurrent("does not duplicate directories shared across files or added explicitly", async () => {
+  it("does not duplicate directories shared across files or added explicitly", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", explicitDirectoryEntries: true });
     await writer.add({ path: "a/", data: "" });
     await writer.add({ path: "a/b/c.txt", data: "x" });
@@ -3259,7 +3523,7 @@ describe("explicitDirectoryEntries", () => {
     expect(reader.entries.map((e) => e.path)).toEqual(["a/", "a/b/", "a/b/c.txt", "a/b/d.txt"]);
   });
 
-  it.concurrent("does not invent a truly empty folder; that must still be added manually", async () => {
+  it("does not invent a truly empty folder; that must still be added manually", async () => {
     const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array", explicitDirectoryEntries: true });
     await writer.add({ path: "top.txt", data: "x" });
     const reader = await openZip(await writer.close());

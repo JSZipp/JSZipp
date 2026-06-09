@@ -3,9 +3,15 @@
 This file is normative. See [Specification Index](README.md) for repository-wide
 specification scope and keyword meaning.
 
-This document summarizes what the current `test/jszipp.test.ts` suite is designed
-to prove, where it intentionally goes deeper than public round trips, and where
-the remaining limits are.
+This document summarizes what the current unit-test suite is designed to prove,
+where it intentionally goes deeper than public round trips, and where the
+remaining limits are.
+
+Current test-file names, scripts, and harness choices mentioned below describe
+the present repository layout. The normative requirement is the proof obligation:
+what MUST be tested, what MAY be mocked, and what gaps require a different test
+layer. Refactoring the test tree does not require a spec change if those proof
+obligations remain satisfied.
 
 ## Testing Goals
 

@@ -57,7 +57,37 @@ installPolyfills_();
 const DecompressionStream_ = polyfill_.DecompressionStream_;
 
 const { max, min, ceil, imul } = Math;
-const { isInteger, isSafeInteger, isFinite } = Number;
+const { isInteger, isSafeInteger, isFinite, MAX_SAFE_INTEGER } = Number;
+/**
+ * Largest ZIP64 64-bit value JSZipp accepts when decoding ZIP64 metadata.
+ *
+ * ZIP64 fields are unsigned 64-bit integers, but this implementation stores parsed
+ * offsets, sizes, and counts as JavaScript `number`s. `Number.MAX_SAFE_INTEGER` is
+ * exactly representable, but a raw ZIP64 value at that boundary is not generally a
+ * usable ZIP byte position: the parser immediately adds fixed ZIP structure sizes
+ * to many of these values before validating or slicing.
+ *
+ * The strictest fixed-size follow-up read is the ZIP64 End Of Central Directory
+ * record lookup:
+ *
+ *   zip64Offset = readU64(...)
+ *   ensureRange(length, zip64Offset, 56, "ZIP64 EOCD record")
+ *
+ * Therefore the largest offset that can still safely add the required 56-byte
+ * ZIP64 EOCD record length without crossing JavaScript's safe integer boundary is:
+ *
+ *   Number.MAX_SAFE_INTEGER - 56
+ *
+ * Using this single conservative cap for all decoded ZIP64 values keeps later
+ * arithmetic such as `offset + size`, `centralOffset + centralSize`, and
+ * `start + compressedSize` within the safe-integer range before normal ZIP bounds
+ * checks reject values that do not fit inside the actual input archive.
+ *
+ * This is an implementation safety limit, not a ZIP format limit. The ZIP spec can
+ * encode larger 64-bit values, but JSZipp rejects them rather than operating on
+ * rounded byte offsets or sizes.
+ */
+const MAX_ZIP64_U64 = MAX_SAFE_INTEGER - 56;
 
 // Per-entry metadata. On write, every field is optional input supplied via
 // `ZipInputEntry.meta`; on read, reader entries expose the parsed values.
@@ -206,15 +236,15 @@ export type ZipEncoderRuntimeOptions = Required<Omit<ZipEncoderOptions, "worker"
  */
 export interface ZipWorkerBackend {
   /**
-   * Prepare one already-reserved entry.
-   *
-   * `pathInfo` is produced by JSZipp's normal path validation/reservation path.
-   * Throw to fail the write; return `undefined` for ordinary fallback.
-   */
+ * Prepare one already-reserved entry.
+ *
+ * `path` is produced by JSZipp's normal path validation/reservation path.
+ * Throw to fail the write; return `undefined` for ordinary fallback.
+ */
   prepare(
     input: ZipInputEntry,
     options: ZipEncoderRuntimeOptions,
-    pathInfo: { path: string; isDirectory: boolean }
+    path: string
   ): Promise<ZipPreparedEntry | undefined>;
 }
 
@@ -461,6 +491,11 @@ const cp437Decoder = {
     return out;
   }
 };
+
+const throwRangeError = (s: string): never => { throw new RangeError(s); };
+const throwError = (s: string): never => { throw new Error(s); };
+const throwDOMException = (s: string, errName: string): never => { throw new DOMException(s, errName); };
+
 let lastFnDecoder: ITextDecoder | null = null;
 const emptyBytes = new Uint8Array_(0);
 // Repeated DOMException "name" arguments, hoisted so each call site references a
@@ -714,10 +749,14 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
     });
   }
 
+  private assertOpen(): void {
+    if (this.closed) throwDOMException(DEV ? "ZIP writer is already closed" : E_CLOSED, ERR_INVALID_STATE);
+  }
+
   // Appends one entry, reading any stream/Blob payload to completion. Async mode.
   async add(entry: ZipInputEntry): Promise<void> {
-    if (this.closed) throw new DOMException(DEV ? "ZIP writer is already closed" : E_CLOSED, ERR_INVALID_STATE);
-    if (this.mode === "sync") throw new DOMException(DEV ? "Cannot mix add() with writeSync(); use one mode per writer" : E_MODE, ERR_INVALID_STATE);
+    this.assertOpen();
+    if (this.mode === "sync") throwDOMException(DEV ? "Cannot mix add() with writeSync(); use one mode per writer" : E_MODE, ERR_INVALID_STATE);
     this.mode = "async";
     const chunks = await this.encoder.encodeEntry(entry);
     for (const chunk of chunks) this.controller?.enqueue(chunk);
@@ -726,8 +765,8 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
   // Finalizes the archive (writes the central directory) and resolves to the
   // configured output shape. The writer cannot be used afterwards.
   async close(): Promise<ZipWriterCloseResult<T>> {
-    if (this.closed) throw new DOMException(DEV ? "ZIP writer is already closed" : E_CLOSED, ERR_INVALID_STATE);
-    if (this.mode === "sync") throw new DOMException(DEV ? "Use closeSync() to finish a writer driven by writeSync()" : E_MODE, ERR_INVALID_STATE);
+    this.assertOpen();
+    if (this.mode === "sync") throwDOMException(DEV ? "Use closeSync() to finish a writer driven by writeSync()" : E_MODE, ERR_INVALID_STATE);
     this.closed = true;
     for (const chunk of this.encoder.close()) this.controller?.enqueue(chunk);
     this.controller?.close();
@@ -755,8 +794,8 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
   // Uint8Array, ArrayBuffer) because Blob and ReadableStream cannot be read
   // synchronously; pass those through add() instead.
   writeSync(entry: ZipSyncInputEntry): void {
-    if (this.closed) throw new DOMException(DEV ? "ZIP writer is already closed" : E_CLOSED, ERR_INVALID_STATE);
-    if (this.mode === "async") throw new DOMException(DEV ? "Cannot mix writeSync() with add(); use one mode per writer" : E_MODE, ERR_INVALID_STATE);
+    this.assertOpen();
+    if (this.mode === "async") throwDOMException(DEV ? "Cannot mix writeSync() with add(); use one mode per writer" : E_MODE, ERR_INVALID_STATE);
     this.mode = "sync";
     for (const chunk of this.encoder.encodeEntrySync(entry)) this.collected.push(chunk);
   }
@@ -764,8 +803,8 @@ export class ZipWriter<T extends ZipWriterOutput = "stream"> {
   // Synchronous counterpart to close(). Returns the same shape as close() for the
   // configured outputAs, computed without awaiting.
   closeSync(): ZipWriterCloseResult<T> {
-    if (this.closed) throw new DOMException(DEV ? "ZIP writer is already closed" : E_CLOSED, ERR_INVALID_STATE);
-    if (this.mode === "async") throw new DOMException(DEV ? "Use close() to finish a writer driven by add()" : E_MODE, ERR_INVALID_STATE);
+    this.assertOpen();
+    if (this.mode === "async") throwDOMException(DEV ? "Use close() to finish a writer driven by add()" : E_MODE, ERR_INVALID_STATE);
     this.closed = true;
     for (const chunk of this.encoder.close()) this.collected.push(chunk);
     const bytes: Uint8Array<ArrayBuffer> = concat(this.collected);
@@ -792,7 +831,7 @@ const validateReadOptions = (options: ZipReadOptions): void => {
 
 const validateSizeCap = (value: number | undefined, name: string): void => {
   if (value !== undefined && (!isFinite(value) || value < 0)) {
-    throw new RangeError(DEV ? `${name} must be a non-negative number` : E_LIMIT);
+    throwRangeError(DEV ? `${name} must be a non-negative number` : E_LIMIT);
   }
 };
 
@@ -803,7 +842,7 @@ export async function* readZipStream(zipStream: ReadableStream<Uint8Array<ArrayB
   validateReadOptions(options);
   const bytes = await readStream(zipStream, options.signal, (loaded) => options.onProgress?.({ phase: "read", loaded }));
   if (options.maxArchiveSize !== undefined && bytes.length > options.maxArchiveSize) {
-    throw new RangeError(DEV ? `ZIP archive size ${bytes.length} exceeds maxArchiveSize ${options.maxArchiveSize}` : E_LIMIT);
+    throwRangeError(DEV ? `ZIP archive size ${bytes.length} exceeds maxArchiveSize ${options.maxArchiveSize}` : E_LIMIT);
   }
   const { entries } = parseZip(bytes, options);
 
@@ -828,7 +867,7 @@ export const openZip = async (source: Blob | File | Uint8Array<ArrayBuffer> | Ar
       ? new Uint8Array_(source)
       : new Uint8Array_(await source[arrayBuffer_]());
   if (options.maxArchiveSize !== undefined && bytes.length > options.maxArchiveSize) {
-    throw new RangeError(DEV ? `ZIP archive size ${bytes.length} exceeds maxArchiveSize ${options.maxArchiveSize}` : E_LIMIT);
+    throwRangeError(DEV ? `ZIP archive size ${bytes.length} exceeds maxArchiveSize ${options.maxArchiveSize}` : E_LIMIT);
   }
   options.onProgress?.({ phase: "read", loaded: bytes.length, total: bytes.length });
   return new BlobZipReader(source instanceof Blob ? source : undefined, parseZip(bytes, options), options.maxEntrySize);
@@ -869,12 +908,12 @@ class ZipEncoderState {
     const { worker, ...encoderOptions } = options;
     this.worker = worker;
     const level = encoderOptions.level ?? 6;
-    if (!isInteger(level) || level < 0 || level > 9) throw new RangeError(DEV ? "level must be an integer from 0 to 9" : E_LEVEL);
+    if (!isInteger(level) || level < 0 || level > 9) throwRangeError(DEV ? "level must be an integer from 0 to 9" : E_LEVEL);
     const timestamps = encoderOptions.timestamps ?? (TimestampMode.Dos | TimestampMode.Unix);
     // timestamps is a bitmask of the three TimestampMode flags (Dos|Unix|Ntfs),
     // so any value outside 0..7 (or a non-integer) is a caller mistake that would
     // otherwise be silently masked by the per-flag bitwise tests below.
-    if (!isInteger(timestamps) || timestamps < 0 || timestamps > 7) throw new RangeError(DEV ? "timestamps must be a bitmask of TimestampMode flags (0 to 7)" : E_MODE);
+    if (!isInteger(timestamps) || timestamps < 0 || timestamps > 7) throwRangeError(DEV ? "timestamps must be a bitmask of TimestampMode flags (0 to 7)" : E_MODE);
     this.options = {
       level,
       zip64: encoderOptions.zip64 ?? "auto",
@@ -893,37 +932,37 @@ class ZipEncoderState {
 
   async encodeEntry(input: ZipInputEntry): Promise<Uint8Array<ArrayBuffer>[]> {
     this.options.signal[throwIfAborted_]();
-    const pathInfo = this.reservePath(input);
+    const path = this.reservePath(input);
     try {
-      const prepared = this.worker && await this.worker.prepare(input, this.options, pathInfo);
-      if (prepared && (prepared.path !== pathInfo.path || prepared.isDirectory !== pathInfo.isDirectory)) {
+      const prepared = this.worker && await this.worker.prepare(input, this.options, path);
+      if (prepared && (prepared.path !== path || prepared.isDirectory !== path.endsWith("/"))) {
         throw new TypeError(DEV ? "worker backend returned an entry for a different path" : E_WORKER);
       }
-      return this.commit(prepared || await prepareEntry(input, this.options, pathInfo));
+      return this.commit(prepared || await prepareEntry(input, this.options, path));
     } catch (error) {
-      this.paths.delete(pathInfo.path);
+      this.paths.delete(path);
       throw error;
     }
   }
 
   encodeEntrySync(input: ZipSyncInputEntry): Uint8Array<ArrayBuffer>[] {
     this.options.signal[throwIfAborted_]();
-    const pathInfo = this.reservePath(input);
+    const path = this.reservePath(input);
     try {
-      return this.commit(prepareEntrySync(input, this.options, pathInfo));
+      return this.commit(prepareEntrySync(input, this.options, path));
     } catch (error) {
-      this.paths.delete(pathInfo.path);
+      this.paths.delete(path);
       throw error;
     }
   }
 
-  private reservePath(input: ZipInputEntry | ZipSyncInputEntry): { path: string; isDirectory: boolean } {
-    const pathInfo = preparePath(input, this.options);
-    if (this.paths.has(pathInfo.path)) {
-      throw new DOMException(DEV ? `Duplicate ZIP entry path: ${pathInfo.path}` : E_PATH, ERR_SECURITY);
+  private reservePath(input: ZipInputEntry | ZipSyncInputEntry): string {
+    const path = preparePath(input, this.options);
+    if (this.paths.has(path)) {
+      throwDOMException(DEV ? `Duplicate ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
     }
-    this.paths.add(pathInfo.path);
-    return pathInfo;
+    this.paths.add(path);
+    return path;
   }
 
   private commit(prepared: ZipPreparedEntry): Uint8Array<ArrayBuffer>[] {
@@ -946,13 +985,12 @@ class ZipEncoderState {
   // Appends one prepared entry's local + central records and advances the
   // running offset/count. Shared by the entry and any directories it implies.
   private writePrepared(prepared: ZipPreparedEntry): Uint8Array<ArrayBuffer> {
-    const chunks = writeEntry(prepared, this.offset, this.options.zip64, this.options.timestamps);
-    this.offset += chunks.local.length;
-    this.central.push(chunks.central);
-    this.centralSize += chunks.central.length;
+    const local = writeEntry(prepared, this.offset, this.options.zip64, this.options.timestamps, this.central);
+    this.offset += local.length;
+    this.centralSize += this.central[this.central.length - 1].length;
     this.entries++;
     this.options.onProgress({ phase: "write", path: prepared.path, loaded: this.offset, entries: this.entries });
-    return chunks.local;
+    return local;
   }
 
   // Parent directory paths implied by `path` ("a/b/c.txt" -> ["a/", "a/b/"];
@@ -1058,7 +1096,7 @@ class StreamEntry extends ZipEntryReader implements ZipStreamEntry {
   }
 
   protected guard(): void {
-    if (this.consumed) throw new DOMException(DEV ? "ZIP stream entry payload was already consumed" : E_CLOSED, ERR_INVALID_STATE);
+    if (this.consumed) throwDOMException(DEV ? "ZIP stream entry payload was already consumed" : E_CLOSED, ERR_INVALID_STATE);
     this.consumed = true;
   }
 }
@@ -1073,7 +1111,7 @@ class BlobZipReader implements ZipRandomAccessReader {
     this.comment = parsed.comment || undefined;
     const entries = parsed.entries;
     this.entries = entries.map((entry) => new BlobZipEntry(entry, () => {
-      if (this.closed) throw new DOMException(DEV ? "ZIP reader is closed" : E_CLOSED, ERR_INVALID_STATE);
+      if (this.closed) throwDOMException(DEV ? "ZIP reader is closed" : E_CLOSED, ERR_INVALID_STATE);
     }, this.maxEntrySize));
     for (const entry of this.entries) this.latest.set(entry.path, entry);
   }
@@ -1102,23 +1140,22 @@ class BlobZipEntry extends ZipEntryReader implements ZipRandomAccessEntry {
 // Validates the per-entry compression level and resolves the final write path.
 // Shared by prepareEntry (async) and prepareEntrySync (sync) to avoid
 // duplicating the level check and path normalization in both call sites.
-const preparePath = (input: ZipInputEntry | ZipSyncInputEntry, options: ZipEncoderRuntimeOptions): { path: string; isDirectory: boolean } => {
+const preparePath = (input: ZipInputEntry | ZipSyncInputEntry, options: ZipEncoderRuntimeOptions): string => {
   const level = input.level ?? options.level;
-  if (!isInteger(level) || level < 0 || level > 9) throw new RangeError(DEV ? "entry level must be an integer from 0 to 9" : E_LEVEL);
-  const path = applyWritePathMode(normalizePath(input.path, input.path.endsWith("/")), options.pathMode);
-  return { path, isDirectory: path.endsWith("/") };
+  if (!isInteger(level) || level < 0 || level > 9) throwRangeError(DEV ? "entry level must be an integer from 0 to 9" : E_LEVEL);
+  return applyWritePathMode(normalizePath(input.path, input.path.endsWith("/")), options.pathMode);
 };
 
-const prepareEntry = async (input: ZipInputEntry, options: ZipEncoderRuntimeOptions, pathInfo = preparePath(input, options)): Promise<ZipPreparedEntry> => {
-  const { path, isDirectory } = pathInfo;
+const prepareEntry = async (input: ZipInputEntry, options: ZipEncoderRuntimeOptions, path = preparePath(input, options)): Promise<ZipPreparedEntry> => {
+  const isDirectory = path.endsWith("/");
   const source = isDirectory ? emptyBytes : await inputToBytes(input.data, options.signal, (loaded, total) => {
     options.onProgress({ phase: "read", path, loaded, total });
   });
   return buildPreparedEntry(input, options, path, isDirectory, source);
 };
 
-const prepareEntrySync = (input: ZipSyncInputEntry, options: ZipEncoderRuntimeOptions, pathInfo = preparePath(input, options)): ZipPreparedEntry => {
-  const { path, isDirectory } = pathInfo;
+const prepareEntrySync = (input: ZipSyncInputEntry, options: ZipEncoderRuntimeOptions, path = preparePath(input, options)): ZipPreparedEntry => {
+  const isDirectory = path.endsWith("/");
   const source = isDirectory ? emptyBytes : inputToBytesSync(input.data, options.signal);
   return buildPreparedEntry(input, options, path, isDirectory, source);
 };
@@ -1127,8 +1164,8 @@ const prepareEntrySync = (input: ZipSyncInputEntry, options: ZipEncoderRuntimeOp
 export const __privatePrepareEntryForWorker = async (
   input: ZipInputEntry,
   options: ZipEncoderRuntimeOptions,
-  pathInfo: { path: string; isDirectory: boolean }
-): Promise<ZipPreparedEntry> => prepareEntry(input, options, pathInfo);
+  path: string
+): Promise<ZipPreparedEntry> => prepareEntry(input, options, path);
 
 const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: ZipEncoderRuntimeOptions, path: string, isDirectory: boolean, source: Uint8Array<ArrayBuffer>): ZipPreparedEntry => {
   const meta = input.meta;
@@ -1150,7 +1187,7 @@ const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: Z
 
   const level = input.level ?? options.level;
   const requestedMethod = input.method;
-  let method = requestedMethod === "store" || level === 0 || isDirectory ? METHOD_STORE : METHOD_DEFLATE;
+  let method = requestedMethod === "store" || (level === 0 && requestedMethod !== "deflate") || isDirectory ? METHOD_STORE : METHOD_DEFLATE;
   let compressed = method === METHOD_DEFLATE && source.length > 0 ? deflateRaw(source, level) : source;
   if (requestedMethod === undefined && method === METHOD_DEFLATE && compressed.length >= source.length) {
     method = METHOD_STORE;
@@ -1182,12 +1219,18 @@ const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: Z
 const synthesizeDirectory = (path: string, options: ZipEncoderRuntimeOptions): ZipPreparedEntry =>
   buildPreparedEntry({ path, data: emptyBytes }, options, path, true, emptyBytes);
 
-const writeEntry = (entry: ZipPreparedEntry, localOffset: number, zip64: Zip64Mode, timestamps: TimestampMode): { local: Uint8Array<ArrayBuffer>; central: Uint8Array<ArrayBuffer> } => {
+const writeEntry = (
+  entry: ZipPreparedEntry,
+  localOffset: number,
+  zip64: Zip64Mode,
+  timestamps: TimestampMode,
+  centralChunks: Uint8Array<ArrayBuffer>[]
+): Uint8Array<ArrayBuffer> => {
   const pathBytes = textEncoder.encode(entry.path);
   const commentBytes = textEncoder.encode(entry.comment);
   const time = dosDateTime(entry.modifiedAt);
   const needsZip64 = zip64 === "force" || entry.sourceSize > ZIP64_LIMIT || entry.compressed.length > ZIP64_LIMIT || localOffset > ZIP64_LIMIT;
-  if (zip64 === "off" && needsZip64) throw new RangeError(DEV ? "ZIP64 is disabled and this archive exceeds standard ZIP limits" : E_ZIP64);
+  if (zip64 === "off" && needsZip64) writeEntryFail();
   // The local header has only compressed/uncompressed size slots; the central
   // header also has the local-offset slot. writeEntry() saturates exactly those
   // slots under ZIP64, so each extra carries only the matching saturated fields.
@@ -1206,9 +1249,9 @@ const writeEntry = (entry: ZipPreparedEntry, localOffset: number, zip64: Zip64Mo
 
   // These lengths are written with writeU16(), which silently truncates above
   // 65535 and would emit a corrupt header; reject instead.
-  if (pathBytes.length > UINT16_LIMIT) throw new RangeError(DEV ? "ZIP entry path must fit in 65535 bytes" : E_FIELD);
-  if (commentBytes.length > UINT16_LIMIT) throw new RangeError(DEV ? "ZIP entry comment must fit in 65535 bytes" : E_FIELD);
-  if (localExtra.length > UINT16_LIMIT || centralExtra.length > UINT16_LIMIT) throw new RangeError(DEV ? "ZIP entry extra field must fit in 65535 bytes" : E_FIELD);
+  if (pathBytes.length > UINT16_LIMIT) throwRangeError(DEV ? "ZIP entry path must fit in 65535 bytes" : E_FIELD);
+  if (commentBytes.length > UINT16_LIMIT) throwRangeError(DEV ? "ZIP entry comment must fit in 65535 bytes" : E_FIELD);
+  if (localExtra.length > UINT16_LIMIT || centralExtra.length > UINT16_LIMIT) throwRangeError(DEV ? "ZIP entry extra field must fit in 65535 bytes" : E_FIELD);
 
   const local = new Uint8Array_(30 + pathBytes.length + localExtra.length + entry.compressed.length);
   const view = new DataView_(local.buffer);
@@ -1252,15 +1295,16 @@ const writeEntry = (entry: ZipPreparedEntry, localOffset: number, zip64: Zip64Mo
   central.set(centralExtra, 46 + pathBytes.length);
   central.set(commentBytes, 46 + pathBytes.length + centralExtra.length);
 
-  return { local, central };
+  centralChunks.push(central);
+  return local;
 };
 
 const writeEndOfCentralDirectory = (entries: number, centralSize: number, centralOffset: number, zip64: Zip64Mode, comment: string): Uint8Array<ArrayBuffer>[] => {
   const needsZip64 = zip64 === "force" || entries > UINT16_LIMIT || centralOffset > ZIP64_LIMIT || centralSize > ZIP64_LIMIT;
-  if (zip64 === "off" && needsZip64) throw new RangeError(DEV ? "ZIP64 is disabled and this archive exceeds standard ZIP limits" : E_ZIP64);
+  if (zip64 === "off" && needsZip64) writeEntryFail();
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   const commentBytes = textEncoder.encode(comment);
-  if (commentBytes.length > UINT16_LIMIT) throw new RangeError(DEV ? "ZIP archive comment must fit in 65535 bytes" : E_FIELD);
+  if (commentBytes.length > UINT16_LIMIT) throwRangeError(DEV ? "ZIP archive comment must fit in 65535 bytes" : E_FIELD);
 
   if (needsZip64) {
     const zip64Eocd = new Uint8Array_(56);
@@ -1296,6 +1340,8 @@ const writeEndOfCentralDirectory = (entries: number, centralSize: number, centra
   return chunks;
 };
 
+const writeEntryFail = (): never => throwRangeError(DEV ? "ZIP64 is disabled and this archive exceeds standard ZIP limits" : E_ZIP64);
+
 const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): ParsedZip => {
   const eocdOffset = findEocd(bytes);
   const view = dataView(bytes);
@@ -1312,7 +1358,7 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
   const strictPackage = pathMode === "strict-package";
   const commentLength = readU16(view, eocdOffset + 20);
   const comment = fnDecoder.decode(bytes.subarray(eocdOffset + 22, eocdOffset + 22 + commentLength));
-  const { entries, centralOffset, centralSize } = resolveEocd(view, bytes, eocdOffset);
+  const { entries, centralOffset, centralSize } = resolveEocd(view, bytes.length, eocdOffset);
 
   const result: (CentralEntry & { compressed: Uint8Array<ArrayBuffer> })[] = [];
   const seenLocalOffsets = new Set<number>();
@@ -1324,11 +1370,11 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
 
   for (let index = 0; index < entries && cursor < end; index++) {
     options.signal?.[throwIfAborted_]();
-    const entry = readCentralEntry(bytes, cursor, fnDecoder);
+    const entry = readCentralEntry(bytes, cursor, fnDecoder) as CentralEntry & { compressed: Uint8Array<ArrayBuffer> };
     // Two central entries pointing at one local header (a reused/overlapping
     // offset) let a strict reader and a recovering one see different trees.
     if (seenLocalOffsets.has(entry.localOffset)) {
-      throw new Error(DEV ? `Two central directory entries reuse local-header offset ${entry.localOffset}` : E_STRUCTURE);
+      throwError(DEV ? `Two central directory entries reuse local-header offset ${entry.localOffset}` : E_STRUCTURE);
     }
     seenLocalOffsets.add(entry.localOffset);
     // The local header's name must match the central directory's, so a streaming
@@ -1339,10 +1385,13 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
     const path = applyPathMode(entry.path, pathMode);
     if (collisionKeys) {
       const key = path.normalize("NFC").toLowerCase();
-      if (collisionKeys.has(key)) throw new Error(DEV ? `Duplicate or colliding entry path in strict-package mode: ${path}` : E_PATH);
+      if (collisionKeys.has(key)) throwError(DEV ? `Duplicate or colliding entry path in strict-package mode: ${path}` : E_PATH);
       collisionKeys.add(key);
     }
-    result.push({ ...entry, path, isDirectory: path.endsWith("/") || entry.isDirectory, compressed });
+    entry.path = path;
+    entry.isDirectory ||= path.endsWith("/");
+    entry.compressed = compressed;
+    result.push(entry);
     cursor += 46 + readU16(view, cursor + 28) + readU16(view, cursor + 30) + readU16(view, cursor + 32);
     options.onProgress?.({ phase: "parse", loaded: cursor - centralOffset, total: centralSize, entries: index + 1 });
   }
@@ -1353,10 +1402,10 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
   // that exactly `entries` records were parsed and that they consumed exactly the
   // declared central-directory size.
   if (result.length !== entries) {
-    throw new Error(DEV ? `Central directory entry count mismatch: header declared ${entries}, parsed ${result.length}` : E_STRUCTURE);
+    throwError(DEV ? `Central directory entry count mismatch: header declared ${entries}, parsed ${result.length}` : E_STRUCTURE);
   }
   if (cursor !== end) {
-    throw new Error(DEV ? `Central directory size mismatch: parsed entries end at ${cursor}, expected ${end}` : E_STRUCTURE);
+    throwError(DEV ? `Central directory size mismatch: parsed entries end at ${cursor}, expected ${end}` : E_STRUCTURE);
   }
 
   return { comment, entries: result };
@@ -1365,12 +1414,12 @@ const parseZip = (bytes: Uint8Array<ArrayBuffer>, options: ZipReadOptions): Pars
 const readCentralEntry = (bytes: Uint8Array<ArrayBuffer>, offset: number, fnDecoder: ITextDecoder): CentralEntry => {
   const view = dataView(bytes);
   ensureRange(bytes.length, offset, 46, "central directory entry header");
-  if (readU32(view, offset) !== 0x02014b50) throw new Error(DEV ? "Invalid central directory header" : E_STRUCTURE);
+  if (readU32(view, offset) !== 0x02014b50) throwError(DEV ? "Invalid central directory header" : E_STRUCTURE);
   const flags = readU16(view, offset + 8);
-  if ((flags & ENCRYPTED_FLAG) !== 0) throw new DOMException(DEV ? "Encrypted ZIP entries are not supported" : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
+  if ((flags & ENCRYPTED_FLAG) !== 0) throwDOMException(DEV ? "Encrypted ZIP entries are not supported" : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
 
   const method = readU16(view, offset + 10);
-  if (method !== METHOD_STORE && method !== METHOD_DEFLATE) throw new DOMException(DEV ? `Unsupported ZIP compression method: ${method}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
+  if (method !== METHOD_STORE && method !== METHOD_DEFLATE) throwDOMException(DEV ? `Unsupported ZIP compression method: ${method}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
 
   const pathLength = readU16(view, offset + 28);
   const extraLength = readU16(view, offset + 30);
@@ -1384,10 +1433,9 @@ const readCentralEntry = (bytes: Uint8Array<ArrayBuffer>, offset: number, fnDeco
   let size = readU32(view, offset + 24);
   let localOffset = readU32(view, offset + 42);
   const zip64 = parseZip64Extra(extraField);
-
-  if (size === ZIP64_LIMIT) size = requiredZip64(zip64.shift(), "ZIP64 uncompressed size");
-  if (compressedSize === ZIP64_LIMIT) compressedSize = requiredZip64(zip64.shift(), "ZIP64 compressed size");
-  if (localOffset === ZIP64_LIMIT) localOffset = requiredZip64(zip64.shift(), "ZIP64 local header offset");
+  if (size === ZIP64_LIMIT && zip64 !== undefined) size = requiredZip64(zip64.shift(), "ZIP64 uncompressed size");
+  if (compressedSize === ZIP64_LIMIT && zip64 !== undefined) compressedSize = requiredZip64(zip64.shift(), "ZIP64 compressed size");
+  if (localOffset === ZIP64_LIMIT) localOffset = requiredZip64(zip64?.shift(), "ZIP64 local header offset");
 
   const decoder = (flags & UTF8_FLAG) !== 0 ? textDecoder : fnDecoder;
 
@@ -1425,23 +1473,30 @@ const readCentralEntry = (bytes: Uint8Array<ArrayBuffer>, offset: number, fnDeco
   };
 };
 
-const readLocalPayload = (bytes: Uint8Array<ArrayBuffer>, entry: CentralEntry, centralNameBytes: Uint8Array<ArrayBuffer>, strictPackage: boolean, centralRawCompSize: number, centralRawSize: number): Uint8Array<ArrayBuffer> => {
+const readLocalPayload = (
+  bytes: Uint8Array<ArrayBuffer>,
+  entry: CentralEntry,
+  centralNameBytes: Uint8Array<ArrayBuffer>,
+  strictPackage: boolean,
+  centralRawCompSize: number,
+  centralRawSize: number
+): Uint8Array<ArrayBuffer> => {
   const view = dataView(bytes);
   const base = entry.localOffset;
   ensureRange(bytes.length, base, 30, "local file header");
-  if (readU32(view, base) !== 0x04034b50) throw new Error(DEV ? "Invalid local file header" : E_STRUCTURE);
+  if (readU32(view, base) !== 0x04034b50) throwError(DEV ? "Invalid local file header" : E_STRUCTURE);
   const localFlags = readU16(view, base + 6);
   // A listing trusts the central flags while a streaming extractor reads the
   // local ones; if the security-relevant bits disagree, the two views diverge.
   if (((localFlags ^ entry.flags) & SECURITY_FLAGS) !== 0) {
-    throw new Error(DEV ? `Local/central flag mismatch for ${entry.path}` : E_STRUCTURE);
+    throwError(DEV ? `Local/central flag mismatch for ${entry.path}` : E_STRUCTURE);
   }
   const pathLength = readU16(view, base + 26);
   const extraLength = readU16(view, base + 28);
   ensureRange(bytes.length, base + 30, pathLength, "local file header name");
   // The name a sequential reader sees (local) must equal the listed name (central).
   if (!bytesEqual(bytes.subarray(base + 30, base + 30 + pathLength), centralNameBytes)) {
-    throw new Error(DEV ? `Local/central filename mismatch for ${entry.path}` : E_STRUCTURE);
+    throwError(DEV ? `Local/central filename mismatch for ${entry.path}` : E_STRUCTURE);
   }
   // strict-package only: with bit 3 clear the local sizes are authoritative and
   // must match the central raw slots (both real, or both the ZIP64 sentinel). The
@@ -1449,7 +1504,21 @@ const readLocalPayload = (bytes: Uint8Array<ArrayBuffer>, entry: CentralEntry, c
   // bit 3 set the local slots are data-descriptor placeholders, so it is skipped.
   if (strictPackage && ((localFlags | entry.flags) & DATA_DESCRIPTOR_FLAG) === 0 &&
       (readU32(view, base + 18) !== centralRawCompSize || readU32(view, base + 22) !== centralRawSize)) {
-    throw new Error(DEV ? `Local/central size mismatch for ${entry.path}` : E_STRUCTURE);
+    throwError(DEV ? `Local/central size mismatch for ${entry.path}` : E_STRUCTURE);
+  }
+  const localCompressedSize = readU32(view, base + 18);
+  const localSize = readU32(view, base + 22);
+  // Some legacy writers saturate the central-directory size slots without a
+  // ZIP64 extra, but still store the real 32-bit sizes in the local header.
+  // Recover only from that narrow shape. Bit 3 means the local slots are
+  // placeholders, so there is no trustworthy non-ZIP64 fallback.
+  if (entry.compressedSize === ZIP64_LIMIT) {
+    if ((localFlags & DATA_DESCRIPTOR_FLAG) !== 0 || localCompressedSize === ZIP64_LIMIT) requiredZip64Fail("ZIP64 compressed size");
+    entry.compressedSize = localCompressedSize;
+  }
+  if (entry.size === ZIP64_LIMIT) {
+    if ((localFlags & DATA_DESCRIPTOR_FLAG) !== 0 || localSize === ZIP64_LIMIT) requiredZip64Fail("ZIP64 uncompressed size");
+    entry.size = localSize;
   }
   const start = base + 30 + pathLength + extraLength;
   ensureRange(bytes.length, start, entry.compressedSize, "local file payload");
@@ -1459,13 +1528,13 @@ const readLocalPayload = (bytes: Uint8Array<ArrayBuffer>, entry: CentralEntry, c
 const inflateEntry = async (entry: CentralEntry & { compressed: Uint8Array<ArrayBuffer> }, maxEntrySize?: number): Promise<Uint8Array<ArrayBuffer>> => {
   // Cheap rejection for an honestly-declared oversized entry, before any work.
   if (maxEntrySize !== undefined && entry.size > maxEntrySize) {
-    throw new RangeError(DEV ? `Entry ${entry.path} uncompressed size ${entry.size} exceeds maxEntrySize ${maxEntrySize}` : E_LIMIT);
+    throwRangeError(DEV ? `Entry ${entry.path} uncompressed size ${entry.size} exceeds maxEntrySize ${maxEntrySize}` : E_LIMIT);
   }
   // For deflate, also pass the cap into inflate so a header that lies about its
   // size cannot expand past the cap during decompression.
   const bytes = entry.method === METHOD_DEFLATE ? await inflateRaw(entry.compressed, entry.size, maxEntrySize) : entry.compressed;
-  if (bytes.length !== entry.size) throw new Error(DEV ? `Size mismatch for ${entry.path}` : E_STRUCTURE);
-  if (crc32(bytes) !== entry.crc32) throw new Error(DEV ? `CRC32 mismatch for ${entry.path}` : E_CRC);
+  if (bytes.length !== entry.size) throwError(DEV ? `Size mismatch for ${entry.path}` : E_STRUCTURE);
+  if (crc32(bytes) !== entry.crc32) throwError(DEV ? `CRC32 mismatch for ${entry.path}` : E_CRC);
   return bytes;
 };
 
@@ -1490,15 +1559,16 @@ const inputToBytesSync = (input: ZipSyncInputEntry["data"], signal?: AbortSignal
 const deflateRaw = (input: Uint8Array<ArrayBuffer>, level: number): Uint8Array<ArrayBuffer> => {
   if (input.length === 0) return emptyBytes;
   ensureDeflateTables();
-  const tokens = tokenize(input, level);
+  const blockCount = tokenize(input, level);
+  const lengths = lz77TokenBlock.subarray(0, input.length);
+  const distances = lz77TokenBlock.subarray(input.length, input.length * 2);
   const writer = new DeflateBitWriter(input.length);
-  const blockCount = tokens.blockTokenEnd.length;
   let tokenStart = 0;
   let inputStart = 0;
   for (let block = 0; block < blockCount; block++) {
-    const tokenEnd = tokens.blockTokenEnd[block];
-    const inputEnd = tokens.blockInputEnd[block];
-    emitBlock(writer, input, tokens.lengths, tokens.distances, tokenStart, tokenEnd, inputStart, inputEnd, block === blockCount - 1);
+    const tokenEnd = LZ77_BLOCK_TOKEN_END[block];
+    const inputEnd = LZ77_BLOCK_INPUT_END[block];
+    emitBlock(writer, input, lengths, distances, tokenStart, tokenEnd, inputStart, inputEnd, block === blockCount - 1);
     tokenStart = tokenEnd;
     inputStart = inputEnd;
   }
@@ -1508,16 +1578,9 @@ const deflateRaw = (input: Uint8Array<ArrayBuffer>, level: number): Uint8Array<A
   return stored.length < compressed.length ? stored : compressed;
 };
 
-interface TokenizedInput {
-  lengths: Uint16Array<ArrayBuffer>;
-  distances: Uint16Array<ArrayBuffer>;
-  blockTokenEnd: number[];
-  blockInputEnd: number[];
-}
-
 // Single LZ77 pass. Literals are stored as (distance=0, length=byte); matches as
 // (distance>0, length=match length). No per-token or per-position allocation.
-const tokenize = (input: Uint8Array<ArrayBuffer>, level: number): TokenizedInput => {
+const tokenize = (input: Uint8Array<ArrayBuffer>, level: number): number => {
   // Reused across calls. head must be reset to -1 ("no position") each run.
   // previous needs no reset: every previous[x & WINDOW_MASK] that is ever read
   // was written when position x was inserted earlier in *this* run (a slot is
@@ -1597,7 +1660,7 @@ const tokenize = (input: Uint8Array<ArrayBuffer>, level: number): TokenizedInput
 
   blockTokenEnd.push(count);
   blockInputEnd.push(inputLength);
-  return { lengths, distances, blockTokenEnd, blockInputEnd };
+  return blockTokenEnd.length;
 };
 
 // Emit one DEFLATE block, choosing the cheapest of dynamic / fixed / stored by
@@ -1962,7 +2025,7 @@ const writeHuffmanSymbol = (writer: DeflateBitWriter, codes: Int32Array<ArrayBuf
   if (code === 0) writeHuffmanSymbolFail();
   writer.writeBits(code & 0xffff, code >>> 16);
 };
-const writeHuffmanSymbolFail = (): never => { throw new RangeError(DEV ? "Missing Huffman code" : E_STRUCTURE); }
+const writeHuffmanSymbolFail = (): never => throwRangeError(DEV ? "Missing Huffman code" : E_STRUCTURE);
 
 // Run-length-encodes the combined code-length sequence into the CL_TOKEN_*
 // arrays (symbol/extra/extraBits in parallel) and returns the token count.
@@ -2027,7 +2090,7 @@ const deflateStoredRaw = (input: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffe
 
 const inflateRaw = async (input: Uint8Array<ArrayBuffer>, size: number, maxBytes?: number): Promise<Uint8Array<ArrayBuffer>> => {
   const StreamCtor = DecompressionStream_;
-  if (!StreamCtor) throw new DOMException(DEV ? "DecompressionStream is not available in this runtime" : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
+  if (!StreamCtor) throwDOMException(DEV ? "DecompressionStream is not available in this runtime" : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
   let decompressor: ReadableStream<Uint8Array<ArrayBuffer>>;
   try {
     const stream = new ReadableStream_<Uint8Array<ArrayBuffer>>({
@@ -2043,7 +2106,7 @@ const inflateRaw = async (input: Uint8Array<ArrayBuffer>, size: number, maxBytes
     const BoundedStreamCtor = StreamCtor as typeof DecompressionStream & { new(format: string, maxBytes?: number): DecompressionStream };
     decompressor = stream.pipeThrough(new BoundedStreamCtor("deflate-raw", maxBytes)) as ReadableStream<Uint8Array<ArrayBuffer>>;
   } catch (error) {
-    throw new DOMException(DEV ? `DecompressionStream does not support deflate-raw: ${error instanceof Error ? error.message : String(error)}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
+    return throwDOMException(DEV ? `DecompressionStream does not support deflate-raw: ${error instanceof Error ? error.message : String(error)}` : E_UNSUPPORTED, ERR_NOT_SUPPORTED);
   }
   let output: Uint8Array<ArrayBuffer>;
   try {
@@ -2053,9 +2116,9 @@ const inflateRaw = async (input: Uint8Array<ArrayBuffer>, size: number, maxBytes
     // stream rejecting mid-inflate, i.e. corrupt/truncated compressed data —
     // distinct from the runtime lacking deflate-raw support above.
     if (error instanceof RangeError) throw error;
-    throw new Error(DEV ? `Corrupt DEFLATE stream: ${error instanceof Error ? error.message : String(error)}` : E_INFLATE);
+    return throwError(DEV ? `Corrupt DEFLATE stream: ${error instanceof Error ? error.message : String(error)}` : E_INFLATE);
   }
-  if (output.length !== size) throw new Error(DEV ? `Inflated size mismatch: expected ${size}, got ${output.length}` : E_INFLATE);
+  if (output.length !== size) throwError(DEV ? `Inflated size mismatch: expected ${size}, got ${output.length}` : E_INFLATE);
   return output;
 };
 
@@ -2130,7 +2193,8 @@ class DeflateBitWriter {
     }
     const byte = this.bitBuffer & 0xff;
     this.out[this.offset++] = byte;
-    this.bitBuffer = 0;
+    this.bitBuffer = 0; // tested by bitbuffer-reset-proof.test.ts
+    this.bitCount = 0; // tested by fflate-issue-113-deflate-regression.test.ts
   }
 }
 
@@ -2231,7 +2295,7 @@ const readStream = async (stream: ReadableStream<Uint8Array<ArrayBuffer>>, signa
       total += value.length;
       // Bounded reading: stop as soon as the cap is exceeded instead of
       // materializing the whole (potentially hostile) output first.
-      if (limit !== undefined && total > limit) throw new RangeError(DEV ? `Stream exceeds limit of ${limit} bytes` : E_LIMIT);
+      if (limit !== undefined && total > limit) throwRangeError(DEV ? `Stream exceeds limit of ${limit} bytes` : E_LIMIT);
       onProgress?.(total);
     }
   } catch (error) {
@@ -2259,9 +2323,9 @@ const applyPathMode = (path: string, mode: ZipPathMode): string => {
   if (mode === "unsafe") return path;
   const sanitized = sanitizeZipPath(path);
   if ((mode === "strict" || mode === "strict-package") && (isUnsafeZipPath(path) || sanitized !== normalizePath(path, path.endsWith("/")))) {
-    throw new DOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
+    throwDOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
   }
-  if (!sanitized) throw new DOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
+  if (!sanitized) throwDOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
   return sanitized;
 };
 
@@ -2272,12 +2336,12 @@ const applyPathMode = (path: string, mode: ZipPathMode): string => {
 // unsafe components, guaranteeing the written path round-trips through openZip.
 const applyWritePathMode = (path: string, mode: ZipPathMode): string => {
   if (mode === "strict" || mode === "strict-package") {
-    if (isUnsafeZipPath(path)) throw new DOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
+    if (isUnsafeZipPath(path)) throwDOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
     return path;
   }
   if (mode === "sanitize") {
     const sanitized = sanitizeZipPath(path);
-    if (!sanitized) throw new DOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
+    if (!sanitized) throwDOMException(DEV ? `Unsafe ZIP entry path: ${path}` : E_PATH, ERR_SECURITY);
     return sanitized;
   }
   return path;
@@ -2311,10 +2375,10 @@ const sanitizeZipPath = (path: string): string => {
 const validateUnixPermissions = (perms: number | undefined, timestamps: TimestampMode): void => {
   if (perms === undefined) return;
   if (!isInteger(perms) || perms < 0 || perms > UNIX_PERM_MAX) {
-    throw new RangeError(DEV ? "meta.unixPermissions must be a 3-digit octal value from 0o000 to 0o777" : E_PERM);
+    throwRangeError(DEV ? "meta.unixPermissions must be a 3-digit octal value from 0o000 to 0o777" : E_PERM);
   }
   if ((timestamps & TimestampMode.Unix) === 0) {
-    throw new RangeError(DEV ? "meta.unixPermissions requires the Unix timestamp mode (timestamps must include TimestampMode.Unix)" : E_PERM);
+    throwRangeError(DEV ? "meta.unixPermissions requires the Unix timestamp mode (timestamps must include TimestampMode.Unix)" : E_PERM);
   }
 };
 
@@ -2328,13 +2392,13 @@ const validateUnixPermissions = (perms: number | undefined, timestamps: Timestam
 const validateDosAttributes = (attrs: number | undefined, timestamps: TimestampMode, isDirectory: boolean): void => {
   if (attrs === undefined) return;
   if (!isInteger(attrs) || attrs < 0 || attrs > DOS_ATTR_MAX) {
-    throw new RangeError(DEV ? "meta.dosAttributes must be an integer from 0x00 to 0xff" : E_ATTR);
+    throwRangeError(DEV ? "meta.dosAttributes must be an integer from 0x00 to 0xff" : E_ATTR);
   }
   if ((timestamps & TimestampMode.Unix) !== 0 && (timestamps & TimestampMode.Ntfs) === 0) {
-    throw new RangeError(DEV ? "meta.dosAttributes is not allowed with the Unix timestamp mode unless the NTFS flag is also set" : E_ATTR);
+    throwRangeError(DEV ? "meta.dosAttributes is not allowed with the Unix timestamp mode unless the NTFS flag is also set" : E_ATTR);
   }
   if (((attrs & DOS_DIRECTORY) !== 0) !== isDirectory) {
-    throw new RangeError(DEV ? "meta.dosAttributes directory bit (0x10) must match the entry type (set for directories, clear for files)" : E_ATTR);
+    throwRangeError(DEV ? "meta.dosAttributes directory bit (0x10) must match the entry type (set for directories, clear for files)" : E_ATTR);
   }
 };
 // `unixPermissions` (already range-checked by validateUnixPermissions) is used
@@ -2379,14 +2443,14 @@ const validateEntryTimes = (modifiedAt: Date, createdAt: Date | undefined, lastA
   if (lastAccess !== undefined) validateTimestamp(lastAccess, "lastAccess");
   if (createdAt === undefined) return;
   const created = createdAt.getTime();
-  if (modifiedAt.getTime() < created) throw new RangeError(DEV ? "meta.modifiedAt must not be earlier than meta.createdAt" : E_TIME);
-  if (lastAccess !== undefined && lastAccess.getTime() < created) throw new RangeError(DEV ? "meta.lastAccess must not be earlier than meta.createdAt" : E_TIME);
+  if (modifiedAt.getTime() < created) throwRangeError(DEV ? "meta.modifiedAt must not be earlier than meta.createdAt" : E_TIME);
+  if (lastAccess !== undefined && lastAccess.getTime() < created) throwRangeError(DEV ? "meta.lastAccess must not be earlier than meta.createdAt" : E_TIME);
 };
 
 // A single entry timestamp must be a valid Date with a non-negative epoch value.
 const validateTimestamp = (date: Date, name: string): void => {
   const time = date.getTime();
-  if (!isFinite(time) || time < 0) throw new RangeError(DEV ? `meta.${name} must be a valid Date on or after 1970-01-01` : E_TIME);
+  if (!isFinite(time) || time < 0) throwRangeError(DEV ? `meta.${name} must be a valid Date on or after 1970-01-01` : E_TIME);
 };
 
 const concat = (chunks: Uint8Array<ArrayBuffer>[], knownTotal?: number): Uint8Array<ArrayBuffer> => {
@@ -2437,8 +2501,7 @@ const makeZip64Extra = (values: number[]): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
-const parseZip64Extra = (extra: Uint8Array<ArrayBuffer>): number[] => {
-  const values: number[] = [];
+const parseZip64Extra = (extra: Uint8Array<ArrayBuffer>): number[] | undefined => {
   const view = dataView(extra);
   let offset = 0;
   while (offset + 4 <= extra.length) {
@@ -2447,13 +2510,14 @@ const parseZip64Extra = (extra: Uint8Array<ArrayBuffer>): number[] => {
     const start = offset + 4;
     if (id === ZIP64_EXTRA_ID) {
       const limit = start + length;
-      if (limit > extra.length) break; // declared length runs past the extra data; treat as absent
+      const values: number[] = [];
+      if (limit > extra.length) return values;
       for (let pos = start; pos + 8 <= limit; pos += 8) values.push(readU64(view, pos, "ZIP64 extra field value"));
       return values;
     }
     offset = start + length;
   }
-  return values;
+  return undefined;
 };
 
 const bytesEqual = (a: Uint8Array<ArrayBuffer>, b: Uint8Array<ArrayBuffer>): boolean => {
@@ -2641,25 +2705,31 @@ interface EocdLocation {
   anchor: number;
 }
 
-const resolveEocd = (view: DataView_, bytes: Uint8Array<ArrayBuffer>, eocdOffset: number): EocdLocation => {
+const resolveEocd = (view: DataView_, length: number, eocdOffset: number): EocdLocation => {
   let entries = readU16(view, eocdOffset + 10);
   let centralSize = readU32(view, eocdOffset + 12);
   let centralOffset = readU32(view, eocdOffset + 16);
   let anchor = eocdOffset;
 
-  if (entries === UINT16_LIMIT || centralSize === ZIP64_LIMIT || centralOffset === ZIP64_LIMIT) {
-    const locatorOffset = eocdOffset - 20;
-    if (locatorOffset < 0 || readU32(view, locatorOffset) !== 0x07064b50) throw new Error(DEV ? "ZIP64 locator is missing" : E_ZIP64);
+  const locatorOffset = eocdOffset - 20;
+  const locatorSignatureMatch: boolean = locatorOffset >= 0 && readU32(view, locatorOffset) === 0x07064b50;
+  const requiresZip64 = centralSize === ZIP64_LIMIT || centralOffset === ZIP64_LIMIT;
+
+  // A classic ZIP may legitimately contain exactly 65,535 entries. Only treat
+  // the saturated count as ZIP64 when a real ZIP64 locator is present; the
+  // size/offset sentinels still mandate ZIP64 unconditionally.
+  if (requiresZip64 || (entries === UINT16_LIMIT && locatorSignatureMatch)) {
+    if (!locatorSignatureMatch) throwError(DEV ? "ZIP64 locator is missing" : E_ZIP64);
     const zip64Offset = readU64(view, locatorOffset + 8, "ZIP64 EOCD offset");
-    ensureRange(bytes.length, zip64Offset, 56, "ZIP64 EOCD record");
-    if (readU32(view, zip64Offset) !== 0x06064b50) throw new Error(DEV ? "ZIP64 EOCD record is invalid" : E_ZIP64);
+    ensureRange(length, zip64Offset, 56, "ZIP64 EOCD record");
+    if (readU32(view, zip64Offset) !== 0x06064b50) throwError(DEV ? "ZIP64 EOCD record is invalid" : E_ZIP64);
     entries = readU64(view, zip64Offset + 32, "ZIP64 entry count");
     centralSize = readU64(view, zip64Offset + 40, "ZIP64 central directory size");
     centralOffset = readU64(view, zip64Offset + 48, "ZIP64 central directory offset");
     anchor = zip64Offset;
   }
 
-  ensureRange(bytes.length, centralOffset, centralSize, "central directory");
+  ensureRange(length, centralOffset, centralSize, "central directory");
   return { entries, centralOffset, centralSize, anchor };
 };
 
@@ -2677,10 +2747,10 @@ const resolveEocd = (view: DataView_, bytes: Uint8Array<ArrayBuffer>, eocdOffset
 // a structurally-failed walk -- so the only candidate whose result it can change
 // is a content-bearing one sitting behind heavy failed walks, i.e. a crafted
 // CDH-filled tail. That bounds an otherwise O(candidates * entries) scan.
-const coherentEntryCount = (view: DataView_, bytes: Uint8Array<ArrayBuffer>, eocdOffset: number, budget: { n: number }): number => {
+const coherentEntryCount = (view: DataView_, length: number, eocdOffset: number, budget: { n: number }): number => {
   let location: EocdLocation;
   try {
-    location = resolveEocd(view, bytes, eocdOffset);
+    location = resolveEocd(view, length, eocdOffset);
   } catch {
     return -1;
   }
@@ -2691,9 +2761,7 @@ const coherentEntryCount = (view: DataView_, bytes: Uint8Array<ArrayBuffer>, eoc
   let cursor = centralOffset;
   let count = 0;
   while (count < entries && cursor < end) {
-    if (budget.n <= 0) return -1;
-    budget.n--;
-    if (cursor + 46 > end || readU32(view, cursor) !== 0x02014b50) return -1;
+    if (budget.n-- <= 0 || cursor + 46 > end || readU32(view, cursor) !== 0x02014b50) return -1;
     cursor += 46 + readU16(view, cursor + 28) + readU16(view, cursor + 30) + readU16(view, cursor + 32);
     count++;
   }
@@ -2702,7 +2770,8 @@ const coherentEntryCount = (view: DataView_, bytes: Uint8Array<ArrayBuffer>, eoc
 
 const findEocd = (bytes: Uint8Array<ArrayBuffer>): number => {
   const view = dataView(bytes);
-  const start = bytes.length - 22;
+  const length = bytes.length;
+  const start = length - 22;
   const min = max(0, start - UINT16_LIMIT);
   // Walk every EOCD signature in the bounded tail region, newest (closest to
   // EOF) first, and select comparatively by content rather than by position.
@@ -2721,18 +2790,18 @@ const findEocd = (bytes: Uint8Array<ArrayBuffer>): number => {
   // signatures cannot turn the scan into O(candidates * entries); the genuine
   // candidate is always reached with this intact because real fakes ahead of it
   // (empty or incoherent) walk no records.
-  const budget = { n: ((bytes.length / 46) | 0) + 1 };
+  const budget = { n: ((length / 46) | 0) + 1 };
   for (let j = start; j >= min; j--) {
     if (readU32(view, j) !== 0x06054b50) continue;
-    const atEof = j + 22 + readU16(view, j + 20) === bytes.length;
+    const atEof = j + 22 + readU16(view, j + 20) === length;
     if (nearest < 0 && atEof) nearest = j;
-    const count = coherentEntryCount(view, bytes, j, budget);
+    const count = coherentEntryCount(view, length, j, budget);
     if (count > 0) return j;
     if (count === 0 && atEof && empty < 0) empty = j;
   }
   if (empty >= 0) return empty;
   if (nearest >= 0) return nearest;
-  throw new Error(DEV ? "End of central directory not found" : E_STRUCTURE);
+  return throwError(DEV ? "End of central directory not found" : E_STRUCTURE);
 };
 
 const dataView = (bytes: Uint8Array<ArrayBuffer>): DataView_ => {
@@ -2747,7 +2816,7 @@ const dataView = (bytes: Uint8Array<ArrayBuffer>): DataView_ => {
 // the read wrappers, so the hot paths stay branch-free.
 const ensureRange = (length: number, offset: number, size: number, label: string): void => {
   if (!isSafeInteger(offset) || !isSafeInteger(size) || offset < 0 || size < 0 || offset + size > length) {
-    throw new Error(DEV ? `${label} is outside ZIP bounds` : E_BOUNDS);
+    throwError(DEV ? `${label} is outside ZIP bounds` : E_BOUNDS);
   }
 };
 
@@ -2763,10 +2832,14 @@ const readU64 = (view: DataView_, offset: number, label: string): number => {
   const low = view.getUint32(offset, true);
   const high = view.getUint32(offset + 4, true);
   const value = high * 0x100000000 + low;
-  if (value > Number.MAX_SAFE_INTEGER) readU64Fail(label);
+  if (value > MAX_ZIP64_U64) readU64Fail(label);
   return value;
 };
-const readU64Fail = (label: string): never => { throw new Error(DEV ? `${label} exceeds JavaScript safe integer range` : E_ZIP64); };
+const readU64Fail =
+  DEV
+    ? (label: string): never => throwError(`${label} exceeds JavaScript safe integer range`)
+    : (): never => throwError(E_ZIP64);
+
 
 const writeU16 = (view: DataView_, offset: number, value: number): void => {
   view.setUint16(offset, value, true);
@@ -2781,12 +2854,15 @@ const writeU64 = (view: DataView_, offset: number, value: number): void => {
   view.setUint32(offset, value >>> 0, true);
   view.setUint32(offset + 4, (value / 0x100000000) >>> 0, true);
 };
-const failU64 = (): never => { throw new Error(DEV ? "ZIP64 value must be a safe non-negative integer" : E_ZIP64); };
+const failU64 = (): never => throwError(DEV ? "ZIP64 value must be a safe non-negative integer" : E_ZIP64);
 
 const requiredZip64 = (value: number | undefined, label: string): number => {
   if (value === undefined) requiredZip64Fail(label);
   return value as number;
 };
-const requiredZip64Fail = (label: string): never => { throw new Error(DEV ? `${label} is missing` : E_ZIP64); };
+const requiredZip64Fail =
+  DEV
+    ? (label: string): never => throwError(`${label} is missing`)
+    : (): never => throwError(E_ZIP64);
 
 const CP437 = [..."ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ "];

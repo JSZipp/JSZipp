@@ -2,8 +2,36 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { runInNewContext } from "node:vm";
 
 const require = createRequire(import.meta.url);
+
+// Evaluate a UMD bundle in a throwaway VM context whose global object is the
+// sandbox itself (the UMD factory probes globalThis/self/window). This proves
+// the bundle actually wires up its global and returns the real public symbols,
+// without searching text and without polluting the test process's globalThis.
+// The sandbox is seeded with the host's globals (AbortController, TextEncoder,
+// DecompressionStream, ...) that the bundles touch at evaluation time, but the
+// bundle's own global assignment lands on the sandbox, not the real globalThis.
+const loadUmd = (file: string, globalName: string): any => {
+  const sandbox: any = {};
+
+  for (const key of Object.getOwnPropertyNames(globalThis)) {
+    try {
+      sandbox[key] = (globalThis as any)[key];
+    } catch {
+      // Some host globals expose throwing getters; skip them.
+    }
+  }
+
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  sandbox.window = sandbox;
+
+  runInNewContext(readFileSync(join("dist", file), "utf8"), sandbox, { filename: file });
+
+  return sandbox[globalName];
+};
 
 describe("package exports", () => {
   it("keeps a single worker-script subpath", () => {
@@ -41,11 +69,13 @@ describe("package exports", () => {
 
   it("exposes the CommonJS root", () => {
     const root = require("web-jszipp");
+    const workerPlugin = require("web-jszipp/worker-plugin");
 
     expect(root.ZipWriter).toBeTypeOf("function");
     expect(root.ZipTransformStream).toBeTypeOf("function");
     expect(root.openZip).toBeTypeOf("function");
     expect(root.readZipStream).toBeTypeOf("function");
+    expect(workerPlugin.createWorkerBackend).toBeTypeOf("function");
   });
 
   it("emits direct browser-legacy UMD artifacts", () => {
@@ -97,5 +127,21 @@ describe("package exports", () => {
       const source = readFileSync(join("dist", filename), "utf8");
       expect(source).not.toMatch(/\.throwIfAborted\(/);
     }
+  });
+
+  it("exposes split UMD globals with named public symbols", () => {
+    const reader = loadUmd("jszipp.reader.umd.js", "JSZippReader");
+    expect(reader.openZip).toBeTypeOf("function");
+    expect(reader.readZipStream).toBeTypeOf("function");
+
+    const writer = loadUmd("jszipp.writer.umd.js", "JSZippWriter");
+    expect(writer.ZipWriter).toBeTypeOf("function");
+    expect(writer.ZipTransformStream).toBeTypeOf("function");
+
+    // The bundle must expose JSZippWorkerPlugin.createWorkerBackend directly, NOT
+    // wrapped under a .default property.
+    const workerPlugin = loadUmd("jszipp.worker-plugin.umd.js", "JSZippWorkerPlugin");
+    expect(workerPlugin.createWorkerBackend).toBeTypeOf("function");
+    expect(workerPlugin.default).toBeUndefined();
   });
 });

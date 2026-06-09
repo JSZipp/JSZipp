@@ -12,26 +12,26 @@ type WorkerRequest = {
   id: number;
   input: ZipInputEntry;
   options: Omit<ZipEncoderRuntimeOptions, "signal" | "onProgress">;
-  pathInfo: { path: string; isDirectory: boolean };
-};
-
-const serializeError = (error: unknown): { name: string; message: string } => {
-  if (error instanceof Error) return { name: error.name, message: error.message };
-  return { name: "Error", message: DEV ? String(error) : E_WORKER };
+  path: string;
 };
 
 workerSelf.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
-  const { id, input, options, pathInfo } = event.data;
+  const { id, input, options, path } = event.data;
   try {
     const prepared = await __privatePrepareEntryForWorker(input, {
       ...options,
       signal: new AbortController_().signal,
       onProgress: () => undefined
-    }, pathInfo);
+    }, path);
     const transfer: Transferable[] = [prepared.compressed.buffer];
     if (prepared.extraField.byteLength) transfer.push(prepared.extraField.buffer);
     workerSelf.postMessage({ id, prepared }, transfer);
   } catch (error) {
-    workerSelf.postMessage({ id, error: serializeError(error) });
+    workerSelf.postMessage({
+      id,
+      error: error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { name: "Error", message: DEV ? String(error) : E_WORKER }
+    });
   }
 };

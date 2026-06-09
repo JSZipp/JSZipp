@@ -348,6 +348,11 @@ C:\Windows\System32\drivers\etc\hosts
 
 **The issue:** Original ZIP fields have 4 GiB file-size limits and 65,535-entry count limits. ZIP64 extends these limits.
 
+**Boundary detail:** An archive with exactly 65,535 entries can still be a
+standard ZIP if it does not include ZIP64 records. Do not infer ZIP64 from the
+entry-count boundary alone; require the ZIP64 locator/record or another ZIP64-only
+sentinel field.
+
 **The trap:** A ZIP64 archive may work in modern tools but fail in older libraries, firmware updaters, embedded systems, package installers, or runtimes without ZIP64 support.
 
 **Practical guidance:** Avoid ZIP64 when maximum compatibility matters. Require ZIP64 support when handling large artifacts.

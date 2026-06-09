@@ -97,17 +97,12 @@ export interface ZipWorkerBackendHandle extends ZipWorkerBackend {
   terminate(): void;
 }
 
-type PathInfo = { path: string; isDirectory: boolean };
 type Pending = {
   signal: AbortSignal;
   resolve: (prepared: ZipPreparedEntry | undefined) => void;
   reject: (error: unknown) => void;
   abort: () => void;
   canFallback: boolean;
-};
-type TransferCloneResult = {
-  input: ZipInputEntry;
-  transferredCallerOwnedBuffer: boolean;
 };
 type WorkerResponse = {
   id: number;
@@ -152,40 +147,6 @@ const inputSize = (input: ZipInputEntry["data"]): number | undefined => {
   return undefined;
 };
 
-const serializableOptions = (options: ZipEncoderRuntimeOptions): Omit<ZipEncoderRuntimeOptions, "signal" | "onProgress"> => ({
-  level: options.level,
-  zip64: options.zip64,
-  comment: options.comment,
-  timestamps: options.timestamps,
-  pathMode: options.pathMode,
-  explicitDirectoryEntries: options.explicitDirectoryEntries
-});
-
-const cloneForTransfer = (entry: ZipInputEntry, transferMode: ZipWorkerTransferMode, transfer: Transferable[]): TransferCloneResult => {
-  const { data } = entry;
-  if (data instanceof ArrayBuffer) {
-    if (transferMode === "transfer") {
-      transfer.push(data);
-      return { input: entry, transferredCallerOwnedBuffer: true };
-    }
-    return { input: entry, transferredCallerOwnedBuffer: false };
-  }
-  if (data instanceof Uint8Array) {
-    if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
-      if (transferMode === "transfer") {
-        transfer.push(data.buffer);
-        return { input: entry, transferredCallerOwnedBuffer: true };
-      }
-      return { input: entry, transferredCallerOwnedBuffer: false };
-    }
-    if (transferMode === "copy") return { input: entry, transferredCallerOwnedBuffer: false };
-    const copy = new Uint8Array(data);
-    transfer.push(copy.buffer);
-    return { input: { ...entry, data: copy }, transferredCallerOwnedBuffer: false };
-  }
-  return { input: entry, transferredCallerOwnedBuffer: false };
-};
-
 class ZipWorkerClient implements ZipWorkerBackendHandle {
   private worker?: Worker;
   private removeWorkerListeners?: () => void;
@@ -205,10 +166,10 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
     this.minSize = options.minSize ?? 32 * 1024;
   }
 
-  readonly prepare = async (input: ZipInputEntry, options: ZipEncoderRuntimeOptions, pathInfo: PathInfo): Promise<ZipPreparedEntry | undefined> => {
+  readonly prepare = async (input: ZipInputEntry, options: ZipEncoderRuntimeOptions, path: string): Promise<ZipPreparedEntry | undefined> => {
     options.signal[throwIfAborted_]();
     const size = inputSize(input.data);
-    if (pathInfo.isDirectory || isReadableStreamInput(input.data) || (size !== undefined && size < this.minSize)) return undefined;
+    if (path.endsWith("/") || isReadableStreamInput(input.data) || (size !== undefined && size < this.minSize)) return undefined;
     if (typeof Worker === "undefined") return this.unsupported();
 
     const worker = this.getWorker();
@@ -216,7 +177,26 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
 
     const id = this.nextId++;
     const transfer: Transferable[] = [];
-    const { input: requestInput, transferredCallerOwnedBuffer } = cloneForTransfer(input, this.transferMode, transfer);
+    let requestInput = input;
+    let transferredCallerOwnedBuffer = false;
+    const { data } = input;
+    if (data instanceof ArrayBuffer) {
+      if (this.transferMode === "transfer") {
+        transfer.push(data);
+        transferredCallerOwnedBuffer = true;
+      }
+    } else if (data instanceof Uint8Array) {
+      if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
+        if (this.transferMode === "transfer") {
+          transfer.push(data.buffer);
+          transferredCallerOwnedBuffer = true;
+        }
+      } else if (this.transferMode !== "copy") {
+        const copy = new Uint8Array(data);
+        transfer.push(copy.buffer);
+        requestInput = { ...input, data: copy };
+      }
+    }
 
     return new Promise<ZipPreparedEntry | undefined>((resolve, reject) => {
       const cleanup = (): void => {
@@ -248,7 +228,19 @@ class ZipWorkerClient implements ZipWorkerBackendHandle {
       }
 
       try {
-        worker.postMessage({ id, input: requestInput, options: serializableOptions(options), pathInfo }, transfer);
+        worker.postMessage({
+          id,
+          input: requestInput,
+          options: {
+            level: options.level,
+            zip64: options.zip64,
+            comment: options.comment,
+            timestamps: options.timestamps,
+            pathMode: options.pathMode,
+            explicitDirectoryEntries: options.explicitDirectoryEntries
+          },
+          path
+        }, transfer);
       } catch (error) {
         cleanup();
         if (this.fallback) resolve(undefined);
@@ -386,8 +378,4 @@ export const createWorkerBackend = (options: ZipWorkerBackendOptions): ZipWorker
   const workerSource = options.workerSource ?? options.worker;
   if (!workerSource) throw new TypeError(DEV ? "createWorkerBackend() requires workerSource" : E_REQUIRED);
   return new ZipWorkerClient(workerSource, options);
-};
-
-export default {
-  createWorkerBackend
 };

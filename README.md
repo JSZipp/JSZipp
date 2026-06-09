@@ -346,6 +346,10 @@ new ZipWriter({
 - `"force"`: always emit ZIP64-compatible records.
 - `"off"`: write standard ZIP records and throw if ZIP64 would be required.
 
+A classic ZIP may still have exactly `65,535` entries without being ZIP64. ZIP64
+is only required once a legacy size, offset, or count field overflows, or when
+you explicitly force ZIP64 output.
+
 `outputAs`:
 
 - `"stream"`: `close()` returns `ReadableStream<Uint8Array>`. This is the default.

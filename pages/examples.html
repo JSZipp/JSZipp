@@ -21,15 +21,14 @@
 
         <h2>Use JSZipp</h2>
         <p>JSZipp does not expose a mutable archive object like <code>new JSZip()</code>. Use <code>ZipWriter</code> when creating an archive, and <code>openZip()</code> when reading one.</p>
-        <pre><code>import JSZipp, {
+        <pre><code>import {
   ZipWriter,
   ZipTransformStream,
   openZip,
   readZipStream
 } from "web-jszipp";
 
-// Namespace import is also available.
-const writer = new JSZipp.ZipWriter({ outputAs: "blob" });</code></pre>
+const writer = new ZipWriter({ outputAs: "blob" });</code></pre>
 
         <h2>Basic manipulations</h2>
         <p>JSZip examples often add, update, and remove files on an in-memory object. With JSZipp, prepare the final entry list, then write it once.</p>
@@ -265,7 +264,9 @@ form.addEventListener("submit", async (event) =&gt; {
 
         <h2>Use a stream-shaped ZIP output</h2>
         <p><code>ZipTransformStream</code> fits Web Streams pipelines. JSZipp's current writer still prepares each entry as a complete unit, but the archive output can be consumed as a stream.</p>
-        <pre><code>const zipper = new ZipTransformStream({ level: 6 });
+        <pre><code>import { ZipTransformStream } from "web-jszipp";
+
+const zipper = new ZipTransformStream({ level: 6 });
 const writer = zipper.writable.getWriter();
 
 const upload = fetch("/upload", {

@@ -3,7 +3,9 @@
 This file is normative. See [Specification Index](README.md) for repository-wide
 specification scope and keyword meaning.
 
-Source: [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
+Current implementation note: the code currently lives primarily in the main
+runtime module and shared type definitions, but the exact private file layout is
+not itself normative.
 
 ## 1. High-Level Architecture
 
@@ -80,7 +82,7 @@ input entry
 → prepare metadata
 ```
 
-The relevant functions are:
+Current implementation examples include helpers such as:
 
 ```ts
 prepareEntry()
@@ -131,21 +133,19 @@ interface ZipWorkerBackend {
 `ZipWriter.add()` and `ZipTransformStream` both reserve and validate the path
 first, then ask the backend to prepare the entry. If the backend returns a
 `ZipPreparedEntry`, JSZipp commits those already-compressed bytes. If it returns
-`undefined`, JSZipp runs the normal in-thread `prepareEntry()` path. If it
-throws, the reserved path is released and the write rejects.
+`undefined`, JSZipp runs the normal in-thread preparation path. If it throws,
+the reserved path is released and the write rejects.
 
-The bundled implementation is `createWorkerBackend()` from
-`web-jszipp/worker-plugin`. It posts eligible async entries to the static worker
-script built from `src/worker-script.ts`, which calls
-`__privatePrepareEntryForWorker()` and returns the prepared entry. Directory
+The bundled worker integration posts eligible async entries to a static worker
+script that prepares the entry and returns the prepared result. Directory
 entries, `ReadableStream` inputs, and inputs below `minSize` fall back to the
 normal path. `writeSync()` and `closeSync()` never call the backend.
 
-`src/worker-plugin.ts` and `src/worker-script.ts` are a matched pair and MUST
-share one internal build-flag/polyfill seam module (`src/worker-common.ts`).
-That shared module owns:
+The page-side worker plugin entry and the worker-side script entry are a matched
+pair and MUST share one internal build-flag/polyfill seam module. That shared
+module owns:
 
-- the `__DEV__` / compat-flag selection logic;
+- the DEV/compat-flag selection logic;
 - the worker-side polyfill bindings (`AbortController_`, `throwIfAborted_`,
   `installPolyfills_`);
 - the worker-only production error-code strings.
@@ -890,6 +890,44 @@ deflateOutBuffer
 
 `finish()` returns an exact-size copy, so the reusable buffer is never exposed to callers.
 
+### 18.5 Separate Throw Helpers
+
+JSZipp MAY keep a `throw` in a separate helper instead of inlining it at the
+call site, but this is an optimization tactic, not a style rule.
+
+Canonical shape:
+
+```ts
+const doWork = (value) => {
+  if (!isValid(value)) failInvalidValue();
+  // hot-path work
+};
+
+const failInvalidValue = (): never => {
+  throw new RangeError(DEV ? "Invalid value" : E_CODE);
+};
+```
+
+The rationale is narrow:
+
+- the main function is on a hot or repeated path
+- the failure branch is genuinely cold
+- the extracted helper stays tiny, usually a single `throw`
+- moving the error construction out of line produces a measured improvement in
+  the shipped artifact, or clearly simplifies the hot path's structure
+
+The rationale is also limited:
+
+- a separate throw helper is not inherently clearer
+- it is not automatically faster on modern engines
+- it can lose once the extra function symbol and call site are counted
+- gzip often collapses repeated error text already, so raw minified-byte savings
+  can overstate the real benefit
+
+Therefore JSZipp SHOULD use a separate throw helper only when the cold-path /
+hot-path split is real and the choice is supported by measurement or obvious
+artifact-shape improvement. Otherwise the throw SHOULD stay inline.
+
 ---
 
 ## 19. Why Compression Does Not Use `CompressionStream`
@@ -1163,7 +1201,7 @@ interface ZipReadOptions {
 ```
 
 `StandardFilenameEncoding` is the curated set of browser `TextDecoder` labels in
-`src/types.ts`. `ITextDecoder` is a decoder-shaped object with `encoding`,
+the public type surface. `ITextDecoder` is a decoder-shaped object with `encoding`,
 `fatal`, `ignoreBOM`, and `decode(bytes)` properties, allowing callers to provide
 custom legacy filename decoding.
 

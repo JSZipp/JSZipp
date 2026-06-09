@@ -468,17 +468,29 @@ const verifyZlibValidatedFixtureZip = async (zipPath: string): Promise<void> => 
         const entry = reader.get(expectedEntry.path);
         const shouldCheckDetail = detailIndexes.has(index);
 
-        expect(entry, basename(zipPath)).toBeDefined();
-        if (!entry) continue;
+        if (!entry) {
+          expect(entry, basename(zipPath)).toBeDefined();
+          continue;
+        }
 
-        // Cheap parser metadata is asserted for *every* entry -- it costs almost
-        // nothing next to inflate/recompress, and asserting it on all entries
-        // keeps sampling from hiding central-directory metadata regressions.
-        expect(entry.path).toBe(expectedEntry.path);
-        expect(entry.size).toBe(expectedEntry.size);
-        expect(entry.compressedSize).toBe(expectedEntry.compressedSize);
-        expect(entry.crc32).toBe(expectedEntry.crc32);
-        expect(entry.isDirectory).toBe(expectedEntry.isDirectory);
+        // Cheap parser metadata is checked for *every* entry so sampling cannot
+        // hide a central-directory regression. Constructing a Vitest assertion
+        // per field per entry (~6 * N) is itself the dominant cost on large
+        // all-empty archives, so compare in plain JS first and only re-issue
+        // through expect() -- for the precise message -- when something differs.
+        if (
+          entry.path !== expectedEntry.path ||
+          entry.size !== expectedEntry.size ||
+          entry.compressedSize !== expectedEntry.compressedSize ||
+          entry.crc32 !== expectedEntry.crc32 ||
+          entry.isDirectory !== expectedEntry.isDirectory
+        ) {
+          expect(entry.path).toBe(expectedEntry.path);
+          expect(entry.size).toBe(expectedEntry.size);
+          expect(entry.compressedSize).toBe(expectedEntry.compressedSize);
+          expect(entry.crc32).toBe(expectedEntry.crc32);
+          expect(entry.isDirectory).toBe(expectedEntry.isDirectory);
+        }
 
         if (shouldCheckDetail) {
           expect(isDetailedParsedZipEntry(expectedEntry), `${expectedEntry.path} should include detailed fixture metadata`).toBe(true);

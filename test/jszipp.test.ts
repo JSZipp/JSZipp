@@ -2518,7 +2518,12 @@ describe("openZip", () => {
   });
 
   describe("central directory consistency", () => {
-    it.concurrent("reads a standard ZIP archive with exactly 65535 entries without requiring ZIP64", async () => {
+    it.concurrent("emits no ZIP64 structures for a standard ZIP archive with exactly 65535 entries", async () => {
+      // 65535 == 0xffff is the largest count the 16-bit EOCD entry fields can
+      // hold, so the writer must NOT emit a ZIP64 EOCD/locator here. The reader's
+      // ability to open a real 65535-entry archive is covered independently by
+      // the yauzl-issue-108-ffff fixture, so this test inspects the writer's EOCD
+      // directly instead of paying for a full ~65k-entry openZip round trip.
       const writer = new ZipWriter({ level: 0, zip64: "off", outputAs: "uint8array" });
 
       for (let index = 0; index < 0xffff; index++) writer.writeSync({ path: `f/${index.toString(16).padStart(4, "0")}`, data: "" });
@@ -2527,21 +2532,29 @@ describe("openZip", () => {
       expect(hasSignature(archive, 0x06064b50)).toBe(false);
       expect(hasSignature(archive, 0x07064b50)).toBe(false);
 
-      const reader = await openZip(archive);
-      expect(reader.entries).toHaveLength(0xffff);
-      expect(await reader.get("f/0000")?.text()).toBe("");
-      expect(await reader.get("f/fffe")?.text()).toBe("");
+      const eocd = eocdOffset(archive);
+      const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+      expect(view.getUint16(eocd + 8, true)).toBe(0xffff); // entries on this disk
+      expect(view.getUint16(eocd + 10, true)).toBe(0xffff); // total entries
     }, 30000);
 
     it.concurrent("round-trips a ZIP64 archive with exactly 65536 entries (entry count overflows the 16-bit EOCD field)", async () => {
       // 65536 = 0x10000 entries exceeds the 0xffff UINT16 limit, so the writer
-      // must use ZIP64 EOCD even though no individual entry size is large.
+      // must use ZIP64 EOCD even though no individual entry size is large, and the
+      // reader must take the entry count from the ZIP64 EOCD's 64-bit field (this
+      // boundary is not covered by any fixture, so the openZip round trip stays).
       const writer = new ZipWriter({ level: 0, zip64: "auto", outputAs: "uint8array" });
       for (let index = 0; index < 0x10000; index++) writer.writeSync({ path: `f/${index.toString(16).padStart(4, "0")}`, data: "" });
       const archive = writer.closeSync() as TestBytes;
 
       expect(hasSignature(archive, 0x06064b50)).toBe(true);
       expect(hasSignature(archive, 0x07064b50)).toBe(true);
+
+      // The 16-bit EOCD field saturates at 0xffff; the true count lives in the
+      // ZIP64 EOCD record's 64-bit total-entries field at offset +32.
+      const zip64Eocd = findSignature(archive, 0x06064b50);
+      const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+      expect(Number(view.getBigUint64(zip64Eocd + 32, true))).toBe(0x10000);
 
       const reader = await openZip(archive);
       expect(reader.entries).toHaveLength(0x10000);

@@ -2193,8 +2193,8 @@ class DeflateBitWriter {
     }
     const byte = this.bitBuffer & 0xff;
     this.out[this.offset++] = byte;
-    this.bitBuffer = 0;
-    this.bitCount = 0;
+    this.bitBuffer = 0; // tested by bitbuffer-reset-proof.test.ts
+    this.bitCount = 0; // tested by fflate-issue-113-deflate-regression.test.ts
   }
 }
 

@@ -104,7 +104,7 @@ const buildZip64SentinelWithoutZip64Extra = (
 };
 
 describe("yauzl #109 compatibility — 0xffffffff central-directory sentinels without Zip64 extra", () => {
-  it.concurrent("does not require a Zip64 extra field only because central uncompressedSize is 0xffffffff", async () => {
+  it("does not require a Zip64 extra field only because central uncompressedSize is 0xffffffff", async () => {
     const zipBytes = buildZip64SentinelWithoutZip64Extra({
       centralUncompressedSize: 0xffffffff
     });
@@ -117,7 +117,7 @@ describe("yauzl #109 compatibility — 0xffffffff central-directory sentinels wi
     await zip.close();
   });
 
-  it.concurrent("does not require a Zip64 extra field only because central compressedSize is 0xffffffff", async () => {
+  it("does not require a Zip64 extra field only because central compressedSize is 0xffffffff", async () => {
     const zipBytes = buildZip64SentinelWithoutZip64Extra({
       centralCompressedSize: 0xffffffff
     });

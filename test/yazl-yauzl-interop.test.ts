@@ -127,7 +127,7 @@ const entries: InteropEntry[] = [
 const archiveComment = "interop archive";
 
 describe("JSZipp interop with yazl and yauzl", () => {
-  it.concurrent("compresses the same input as yazl with matching shared ZIP metadata and restorable payloads", async () => {
+  it("compresses the same input as yazl with matching shared ZIP metadata and restorable payloads", async () => {
     const jszippArchive = buildJSZippArchive(entries);
     const yazlArchive = await buildYazlArchive(entries);
 
@@ -136,7 +136,7 @@ describe("JSZipp interop with yazl and yauzl", () => {
     expect(comparableParsedEntries(parseCentralDirectory(jszippArchive))).toEqual(comparableParsedEntries(parseCentralDirectory(yazlArchive)));
   });
 
-  it.concurrent("compresses with JSZipp and restores content plus shared metadata through yauzl", async () => {
+  it("compresses with JSZipp and restores content plus shared metadata through yauzl", async () => {
     const restored = await readWithYauzl(buildJSZippArchive(entries));
 
     expect(comparableRestoredEntries(restored)).toEqual(expectedRestoredEntries(entries));
@@ -145,7 +145,7 @@ describe("JSZipp interop with yazl and yauzl", () => {
     }
   });
 
-  it.concurrent("decompresses a yazl archive with JSZipp and restores content plus shared metadata", async () => {
+  it("decompresses a yazl archive with JSZipp and restores content plus shared metadata", async () => {
     const archive = await buildYazlArchive(entries);
     const restored = await readWithJSZipp(archive);
 
@@ -155,7 +155,7 @@ describe("JSZipp interop with yazl and yauzl", () => {
     }
   });
 
-  it.concurrent("decompresses the same input as yauzl with matching shared metadata and payload bytes", async () => {
+  it("decompresses the same input as yauzl with matching shared metadata and payload bytes", async () => {
     const archive = await buildYazlArchive(entries);
     const [jszippEntries, yauzlEntries] = await Promise.all([readWithJSZipp(archive), readWithYauzl(archive)]);
 
@@ -168,7 +168,7 @@ describe("JSZipp interop with yazl and yauzl", () => {
   });
 
   describe("JSZipp compression raw central-directory consistency", () => {
-    it.concurrent("matches yauzl's raw central-directory fields for JSZipp output", async () => {
+    it("matches yauzl's raw central-directory fields for JSZipp output", async () => {
       const archive = buildJSZippArchive(entries);
       const parsed = centralHeaderRawFields(parseCentralDirectory(archive));
       const yauzlParsed = await readYauzlRawHeaderFields(archive);
@@ -176,7 +176,7 @@ describe("JSZipp interop with yazl and yauzl", () => {
       expect(yauzlParsed).toEqual(parsed);
     });
 
-    it.concurrent("central-directory offsets point to local headers with matching duplicated fields", () => {
+    it("central-directory offsets point to local headers with matching duplicated fields", () => {
       const archive = buildJSZippArchive(entries);
       const centralEntries = parseCentralDirectory(archive);
       const localEntries = centralEntries.map((entry) => parseLocalHeader(archive, entry.localHeaderOffset));

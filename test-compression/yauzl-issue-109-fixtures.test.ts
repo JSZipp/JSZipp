@@ -14,8 +14,8 @@ const readFixture = async (name: string): Promise<TestBytes> => {
   return new Uint8Array(bytes) as TestBytes;
 };
 
-describe.concurrent("yauzl issue #109 fixtures — 0xffffffff central-directory fields without Zip64 extra", () => {
-  it.concurrent("opens a ZIP whose central-directory uncompressedSize is 0xffffffff without a Zip64 extra field", async () => {
+describe("yauzl issue #109 fixtures — 0xffffffff central-directory fields without Zip64 extra", () => {
+  it("opens a ZIP whose central-directory uncompressedSize is 0xffffffff without a Zip64 extra field", async () => {
     const zip = await openZip(
       await readFixture("yauzl-109-uncompressedSize-ffffffff-no-zip64.zip")
     );
@@ -26,7 +26,7 @@ describe.concurrent("yauzl issue #109 fixtures — 0xffffffff central-directory 
     await zip.close();
   });
 
-  it.concurrent("opens a ZIP whose central-directory compressedSize is 0xffffffff without a Zip64 extra field", async () => {
+  it("opens a ZIP whose central-directory compressedSize is 0xffffffff without a Zip64 extra field", async () => {
     const zip = await openZip(
       await readFixture("yauzl-109-compressedSize-ffffffff-no-zip64.zip")
     );
@@ -37,7 +37,7 @@ describe.concurrent("yauzl issue #109 fixtures — 0xffffffff central-directory 
     await zip.close();
   });
 
-  it.concurrent("handles a ZIP whose central-directory relativeOffsetOfLocalHeader is 0xffffffff without requiring a Zip64 extra field", async () => {
+  it("handles a ZIP whose central-directory relativeOffsetOfLocalHeader is 0xffffffff without requiring a Zip64 extra field", async () => {
     const zipBytes = await readFixture(
       "yauzl-109-relativeOffsetOfLocalHeader-ffffffff-no-zip64.zip"
     );

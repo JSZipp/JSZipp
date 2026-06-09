@@ -3008,6 +3008,11 @@ describe("ZIP64 parse errors", () => {
     await expect(openZip(archive)).rejects.toThrow(/zip64 uncompressed size is missing/i);
   });
 
+  // The positive central-directory 0xffffffff uncompressed/compressed-size
+  // sentinel cases (yauzl #109) live in test/yauzl-109-zip64-sentinel.test.ts as
+  // fast synthetic unit tests; we still keep the following test_109a1 and test_109a2 for simple checks.
+
+  // test_109a1
   it.concurrent("interoperability: allows a central-directory uncompressed size of 0xffffffff without ZIP64 extra data", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 24, 0xffffffff, true);
@@ -3016,6 +3021,7 @@ describe("ZIP64 parse errors", () => {
     expect(await reader.get("a.txt")?.text()).toBe("hello");
   });
 
+  // test_109a2
   it.concurrent("interoperability: allows a central-directory compressed size of 0xffffffff without ZIP64 extra data", async () => {
     const bytes = buildStoredArchive([{ path: "a.txt", data: "hello" }]);
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(centralDirectoryOffset(bytes) + 20, 0xffffffff, true);

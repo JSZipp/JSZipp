@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { availableParallelism } from "node:os";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, inflateRawSync } from "node:zlib";
@@ -16,17 +15,6 @@ import { ZipWriter, openZip } from "../src/index";
 // time substantially. Lowering this is purely a speed change, not a coverage one.
 const RECOMPRESSION_LEVEL = 1;
 
-// Per-entry reads (entry.bytes()) inflate via DecompressionStream, which Node
-// backs with the libuv threadpool, so they genuinely run off the main thread and
-// can overlap across fixtures. To keep per-test durations accurate, let Vitest's
-// own concurrent scheduler enforce the cap instead of adding an external queue
-// around `it.concurrent`, whose wait time would be charged to whichever fixture
-// happened to be blocked behind the limiter. The synchronous deflate and the zlib
-// reference parse still run on the main thread, so the ceiling tracks the default
-// threadpool size (4); to scale past it, also raise UV_THREADPOOL_SIZE (via
-// vitest config / CI env, since it must be set before the process starts).
-const FIXTURE_CONCURRENCY = Math.max(2, Math.min(4, availableParallelism()));
-
 // Per-operation timing is diagnostic instrumentation, not part of the test. Each
 // fixture otherwise emits ~10 synchronous process.stdout.write calls, which add
 // up and can block under a pipe. Keep the capability, but off by default; opt in
@@ -36,6 +24,16 @@ const LOG_TIMING = process.env.LOG_FIXTURE_TIMING === "1";
 // Fast fixture sampling is on by default. Set FIXTURE_FAST_SAMPLING=0 to force
 // exhaustive per-entry detail checks on large archives.
 const FAST_FIXTURE_SAMPLING = process.env.FIXTURE_FAST_SAMPLING !== "0";
+
+// By default JSZipp's synchronous deflate is exercised only on the sampled
+// (detail) entries; every other compressible entry is rewritten with method
+// "store". This still proves JSZipp can read each real fixture, rewrite the full
+// archive (all paths, all entries, metadata, central directory), and that the
+// rewritten archive is independently valid -- while running real DEFLATE against
+// first/middle/tail samples. The pure-JS recompression is the suite's dominant
+// cost, so storing the bulk is the largest safe speed lever. Set
+// FIXTURE_EXHAUSTIVE_RECOMPRESS=1 to deflate every compressible entry instead.
+const EXHAUSTIVE_RECOMPRESS = process.env.FIXTURE_EXHAUSTIVE_RECOMPRESS === "1";
 
 type TestBytes = Uint8Array<ArrayBuffer>;
 type ZlibParsedZipEntry = {
@@ -78,8 +76,6 @@ const fixtureZipDir = new URL("../test-compression/zips/", import.meta.url);
 const EMPTY_BYTES = new Uint8Array(0) as TestBytes;
 const DETAILED_CHECK_WINDOW = 36;
 const DETAILED_CHECK_THRESHOLD = 108;
-
-vi.setConfig({ maxConcurrency: FIXTURE_CONCURRENCY });
 
 const byteArray = (bytes: Uint8Array<ArrayBuffer>): TestBytes => bytes as TestBytes;
 const copyBytes = (bytes: Uint8Array): TestBytes => new Uint8Array(bytes) as TestBytes;
@@ -475,16 +471,20 @@ const verifyZlibValidatedFixtureZip = async (zipPath: string): Promise<void> => 
         expect(entry, basename(zipPath)).toBeDefined();
         if (!entry) continue;
 
+        // Cheap parser metadata is asserted for *every* entry -- it costs almost
+        // nothing next to inflate/recompress, and asserting it on all entries
+        // keeps sampling from hiding central-directory metadata regressions.
+        expect(entry.path).toBe(expectedEntry.path);
+        expect(entry.size).toBe(expectedEntry.size);
+        expect(entry.compressedSize).toBe(expectedEntry.compressedSize);
+        expect(entry.crc32).toBe(expectedEntry.crc32);
+        expect(entry.isDirectory).toBe(expectedEntry.isDirectory);
+
         if (shouldCheckDetail) {
           expect(isDetailedParsedZipEntry(expectedEntry), `${expectedEntry.path} should include detailed fixture metadata`).toBe(true);
 
           const detailedExpectedEntry = expectedEntry as ZlibDetailedParsedZipEntry;
 
-          expect(entry.path).toBe(expectedEntry.path);
-          expect(entry.size).toBe(expectedEntry.size);
-          expect(entry.compressedSize).toBe(expectedEntry.compressedSize);
-          expect(entry.crc32).toBe(expectedEntry.crc32);
-          expect(entry.isDirectory).toBe(expectedEntry.isDirectory);
           expect(entry.comment).toBe(expectedEntry.comment);
           expectOptionalBytesEqual(entry.extraField, detailedExpectedEntry.extraField, expectedEntry.path);
           expect(entry.modifiedAt?.toISOString()).toBe(detailedExpectedEntry.modifiedAt.toISOString());
@@ -511,10 +511,20 @@ const verifyZlibValidatedFixtureZip = async (zipPath: string): Promise<void> => 
             : undefined
         };
 
+        // Run JSZipp's pure-JS DEFLATE only on the sampled/detail entries by
+        // default; FIXTURE_EXHAUSTIVE_RECOMPRESS=1 extends it to every entry. The
+        // rest are stored: they still flow through the full rewrite (paths,
+        // metadata, central directory, stored-entry writing), just without the
+        // expensive compress. The original-compressedSize guard skips entries
+        // that barely shrank (e.g. already-compressed media) in both modes -- the
+        // suite proves DEFLATE round-trips, not that incompressible data shrinks.
+        const isCompressible = expectedEntry.size > 0 && expectedEntry.compressedSize <= expectedEntry.size * 0.9;
+        const shouldExerciseDeflate = isCompressible && (EXHAUSTIVE_RECOMPRESS || shouldCheckDetail);
+
         rewritten.writeSync({
           path: entry.path,
           data: expectedEntry.isDirectory ? "" : data,
-          method: expectedEntry.size === 0 || expectedEntry.compressedSize > expectedEntry.size * 0.9 ? "store" : undefined,
+          method: shouldExerciseDeflate ? undefined : "store",
           meta: {
             comment: entry.comment,
             extraField: rewriteExtraField,

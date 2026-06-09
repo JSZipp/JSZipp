@@ -2,9 +2,36 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runInThisContext } from "node:vm";
+import { runInNewContext } from "node:vm";
 
 const require = createRequire(import.meta.url);
+
+// Evaluate a UMD bundle in a throwaway VM context whose global object is the
+// sandbox itself (the UMD factory probes globalThis/self/window). This proves
+// the bundle actually wires up its global and returns the real public symbols,
+// without searching text and without polluting the test process's globalThis.
+// The sandbox is seeded with the host's globals (AbortController, TextEncoder,
+// DecompressionStream, ...) that the bundles touch at evaluation time, but the
+// bundle's own global assignment lands on the sandbox, not the real globalThis.
+const loadUmd = (file: string, globalName: string): any => {
+  const sandbox: any = {};
+
+  for (const key of Object.getOwnPropertyNames(globalThis)) {
+    try {
+      sandbox[key] = (globalThis as any)[key];
+    } catch {
+      // Some host globals expose throwing getters; skip them.
+    }
+  }
+
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  sandbox.window = sandbox;
+
+  runInNewContext(readFileSync(join("dist", file), "utf8"), sandbox, { filename: file });
+
+  return sandbox[globalName];
+};
 
 describe("package exports", () => {
   it("keeps a single worker-script subpath", () => {
@@ -102,32 +129,19 @@ describe("package exports", () => {
     }
   });
 
-  it("keeps UMD globals wired to live public symbols", () => {
-    const reader = readFileSync(join("dist", "jszipp.reader.umd.js"), "utf8");
-    const writer = readFileSync(join("dist", "jszipp.writer.umd.js"), "utf8");
-    const workerPlugin = readFileSync(join("dist", "jszipp.worker-plugin.umd.js"), "utf8");
+  it("exposes split UMD globals with named public symbols", () => {
+    const reader = loadUmd("jszipp.reader.umd.js", "JSZippReader");
+    expect(reader.openZip).toBeTypeOf("function");
+    expect(reader.readZipStream).toBeTypeOf("function");
 
-    expect(reader).toContain("openZip");
-    expect(reader).toContain("readZipStream");
-    expect(writer).toContain("ZipWriter");
-    expect(writer).toContain("ZipTransformStream");
-    expect(workerPlugin).toContain("createWorkerBackend");
-  });
+    const writer = loadUmd("jszipp.writer.umd.js", "JSZippWriter");
+    expect(writer.ZipWriter).toBeTypeOf("function");
+    expect(writer.ZipTransformStream).toBeTypeOf("function");
 
-  it("exposes worker-plugin UMD global at correct path", () => {
-    // Smoke test: verify that the UMD bundle exports the correct global shape.
-    // The bundle should expose JSZippWorkerPlugin.createWorkerBackend, NOT
-    // JSZippWorkerPlugin.default.createWorkerBackend.
-    const sandboxGlobal = { globalThis: {} };
-    sandboxGlobal.globalThis.self = sandboxGlobal.globalThis;
-
-    const code = readFileSync(join("dist", "jszipp.worker-plugin.umd.js"), "utf8");
-    runInThisContext(code, { filename: "jszipp.worker-plugin.umd.js" });
-
-    const workerPlugin = (globalThis as any).JSZippWorkerPlugin;
-    expect(workerPlugin).toBeDefined();
+    // The bundle must expose JSZippWorkerPlugin.createWorkerBackend directly, NOT
+    // wrapped under a .default property.
+    const workerPlugin = loadUmd("jszipp.worker-plugin.umd.js", "JSZippWorkerPlugin");
     expect(workerPlugin.createWorkerBackend).toBeTypeOf("function");
-    // Should not have a .default property wrapping the actual export
     expect(workerPlugin.default).toBeUndefined();
   });
 });

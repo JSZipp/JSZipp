@@ -1187,7 +1187,7 @@ const buildPreparedEntry = (input: ZipInputEntry | ZipSyncInputEntry, options: Z
 
   const level = input.level ?? options.level;
   const requestedMethod = input.method;
-  let method = requestedMethod === "store" || level === 0 || isDirectory ? METHOD_STORE : METHOD_DEFLATE;
+  let method = requestedMethod === "store" || (level === 0 && requestedMethod !== "deflate") || isDirectory ? METHOD_STORE : METHOD_DEFLATE;
   let compressed = method === METHOD_DEFLATE && source.length > 0 ? deflateRaw(source, level) : source;
   if (requestedMethod === undefined && method === METHOD_DEFLATE && compressed.length >= source.length) {
     method = METHOD_STORE;
@@ -2194,6 +2194,7 @@ class DeflateBitWriter {
     const byte = this.bitBuffer & 0xff;
     this.out[this.offset++] = byte;
     this.bitBuffer = 0;
+    this.bitCount = 0;
   }
 }
 

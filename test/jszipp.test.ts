@@ -33,13 +33,23 @@ const umode = (entry?: { externalAttributes?: number }): number | undefined => {
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const nodeCrc32 = (bytes: Uint8Array): number => crc32(bytes) >>> 0;
-const expectBytesEqual = (actual: Uint8Array | undefined, expected: Uint8Array, label?: string): void => {
+const expectBytesEqual = (actual: Uint8Array<ArrayBuffer> | undefined, expected: Uint8Array<ArrayBuffer>, label?: string): void => {
   expect(actual, label).toBeDefined();
-  expect(
-    Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
-      .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength)),
-    label
-  ).toBe(true);
+
+  if (actual!.byteLength !== expected.byteLength) {
+    expect(actual!.byteLength, `${label} byte length`).toBe(expected.byteLength);
+    return;
+  }
+
+  if (expected.byteLength === 0) return;
+
+  const ret = Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
+    .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength));
+
+  if (ret !== true) {
+    expect(ret, label).toBe(true);
+  }
+
 };
 
 class FakeZipWorker {

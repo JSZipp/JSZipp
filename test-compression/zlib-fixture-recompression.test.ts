@@ -91,11 +91,13 @@ const expectBytesEqual = (actual: Uint8Array<ArrayBuffer> | undefined, expected:
 
   if (expected.byteLength === 0) return;
 
-  expect(
-    Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
-      .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength)),
-    label
-  ).toBe(true);
+  const ret = Buffer.from(actual!.buffer, actual!.byteOffset, actual!.byteLength)
+    .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength));
+
+  if (ret !== true) {
+    expect(ret, label).toBe(true);
+  }
+
 };
 
 const expectOptionalBytesEqual = (
@@ -493,15 +495,18 @@ const verifyZlibValidatedFixtureZip = async (zipPath: string): Promise<void> => 
         }
 
         if (shouldCheckDetail) {
-          expect(isDetailedParsedZipEntry(expectedEntry), `${expectedEntry.path} should include detailed fixture metadata`).toBe(true);
-
           const detailedExpectedEntry = expectedEntry as ZlibDetailedParsedZipEntry;
-
-          expect(entry.comment).toBe(expectedEntry.comment);
-          expectOptionalBytesEqual(entry.extraField, detailedExpectedEntry.extraField, expectedEntry.path);
-          expect(entry.modifiedAt?.toISOString()).toBe(detailedExpectedEntry.modifiedAt.toISOString());
-          expect(entry.externalAttributes).toBe(detailedExpectedEntry.externalAttributes);
-          expect(unixModeFromExternalAttributes(entry.externalAttributes ?? 0)).toBe(detailedExpectedEntry.unixMode);
+          const bEntries = [
+            [isDetailedParsedZipEntry(expectedEntry), true],
+            [entry.comment, expectedEntry.comment],
+            [entry.modifiedAt?.toISOString(), detailedExpectedEntry.modifiedAt.toISOString()],
+            [entry.externalAttributes, expectedEntry.externalAttributes],
+            [unixModeFromExternalAttributes(entry.externalAttributes ?? 0), expectedEntry.unixMode],
+          ]
+          for (const bEntry of bEntries) {
+            if (bEntry[0] !== bEntry[1]) expect(bEntry[0]).toBe(bEntry[1]);
+          }
+          expectOptionalBytesEqual(entry.extraField, expectedEntry.extraField, expectedEntry.path);
         }
 
         const data = expectedEntry.size === 0 ? EMPTY_BYTES : await entry.bytes();

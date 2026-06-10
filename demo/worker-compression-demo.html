@@ -34,7 +34,7 @@
   }
   /* CRT scanline atmosphere */
   body::after{
-    content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+    content:""; position:fixed; top:0; right:0; bottom:0; left:0; pointer-events:none; z-index:50;
     background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.18) 2px 3px);
     mix-blend-mode:multiply; opacity:.5;
   }
@@ -339,11 +339,15 @@ const SOURCES = {
     "https://unpkg.com/fflate@0.8.2/umd/index.js"
   ],
   jszipp: [
-    !github && "../dist/jszipp.umd.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
-    "https://unpkg.com/web-jszipp/dist/jszipp.umd.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
-    "https://unpkg.com/web-jszipp/dist/jszipp.umd.js"
+    bucket === "modern" && !github && "../dist/jszipp.umd.js",
+    bucket === "modern" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js",
+    bucket === "modern" && "https://unpkg.com/web-jszipp/dist/jszipp.umd.js",
+    bucket === "cr86ff68" && !github && "../dist/cr86ff68/jszipp.umd.js",
+    bucket === "cr86ff68" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.umd.js",
+    bucket === "cr86ff68" && "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.umd.js",
+    bucket === "cr61ff58" && !github && "../dist/cr61ff58/jszipp.umd.js",
+    bucket === "cr61ff58" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.umd.js",
+    bucket === "cr61ff58" && "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.umd.js"
   ].filter(Boolean),
   jszippWorkerPluginModule: [
     !github && "../dist/jszipp.worker-plugin.mjs",
@@ -351,15 +355,15 @@ const SOURCES = {
     "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.mjs"
   ].filter(Boolean),
   jszippWorkerPluginClassic: [
-    !github && "../dist/jszipp.worker-plugin.umd.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.umd.js",
-    "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.umd.js",
-    !github && "../dist/cr86ff68/jszipp.worker-plugin.umd.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
-    "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
-    !github && "../dist/cr61ff58/jszipp.worker-plugin.umd.js",
-    "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js",
-    "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js"
+    bucket === "modern" && !github && "../dist/jszipp.worker-plugin.umd.js",
+    bucket === "modern" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.worker-plugin.umd.js",
+    bucket === "modern" && "https://unpkg.com/web-jszipp/dist/jszipp.worker-plugin.umd.js",
+    bucket === "cr86ff68" && !github && "../dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    bucket === "cr86ff68" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    bucket === "cr86ff68" && "https://unpkg.com/web-jszipp/dist/cr86ff68/jszipp.worker-plugin.umd.js",
+    bucket === "cr61ff58" && !github && "../dist/cr61ff58/jszipp.worker-plugin.umd.js",
+    bucket === "cr61ff58" && "https://cdn.jsdelivr.net/npm/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js",
+    bucket === "cr61ff58" && "https://unpkg.com/web-jszipp/dist/cr61ff58/jszipp.worker-plugin.umd.js"
   ].filter(Boolean),
   jszippWorkerScriptModule: [
     github ? "../demo/demo-dist/jszipp.worker.mjs" : "../dist/jszipp.worker.mjs",

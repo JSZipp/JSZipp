@@ -7,3 +7,4 @@ npm-debug.log*
 /demo/jszipp.umd.js
 /.vscode/settings.json
 test-results
+/.claude

@@ -56,7 +56,7 @@
       body::before {
         content: "";
         position: fixed;
-        inset: 0;
+        top: 0; right: 0; bottom: 0; left: 0;
         z-index: -2;
         background:
           radial-gradient(900px 600px at 78% -8%, rgba(196, 255, 68, 0.08), transparent 60%),
@@ -66,7 +66,7 @@
       body::after {
         content: "";
         position: fixed;
-        inset: 0;
+        top: 0; right: 0; bottom: 0; left: 0;
         z-index: -1;
         pointer-events: none;
         opacity: 0.5;
@@ -79,7 +79,7 @@
 
       .grain {
         position: fixed;
-        inset: 0;
+        top: 0; right: 0; bottom: 0; left: 0;
         z-index: -1;
         pointer-events: none;
         opacity: 0.04;
@@ -269,7 +269,7 @@
       .btn-primary::after {
         content: "";
         position: absolute;
-        inset: 0;
+        top: 0; right: 0; bottom: 0; left: 0;
         background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.45) 50%, transparent 62%);
         transform: translateX(-120%);
         animation: sheen 5s ease-in-out 1s infinite;
@@ -312,7 +312,7 @@
       .stat::before {
         content: "";
         position: absolute;
-        inset: 0 auto 0 0;
+        top: 0; right: auto; bottom: 0; left: 0;
         width: 3px;
         background: var(--faint);
         opacity: 0.65;
@@ -873,7 +873,7 @@
         flex-shrink: 0;
       }
       .drop .dz-ico svg { width: 20px; height: 20px; }
-      .drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+      .drop input[type="file"] { position: absolute; top: 0; right: 0; bottom: 0; left: 0; opacity: 0; cursor: pointer; }
       .drop b { color: var(--ink); }
 
       .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
@@ -978,7 +978,7 @@
         background: var(--line); overflow: hidden;
       }
       .cbar .orig {
-        position: absolute; inset: 0; width: 100%;
+        position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%;
         background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 12px);
       }
       .cbar .comp {
@@ -1056,7 +1056,7 @@
       .entries.virtual::-webkit-scrollbar { width: 10px; }
       .entries.virtual::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
       .entries.virtual .evp { position: relative; width: 100%; }
-      .entries.virtual .erows { position: absolute; inset: 0; }
+      .entries.virtual .erows { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
       .entries.virtual .erow {
         position: absolute; left: 6px; right: 6px;
         height: 42px; margin: 0; animation: none;
@@ -1099,6 +1099,69 @@
       }
       .preview .hl { color: var(--lime); }
       .preview .hl-c { color: var(--cyan); }
+
+      /* entry inspector */
+      .insp-head {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 4px; font-family: var(--mono);
+      }
+      .insp-path { font-size: 0.88rem; font-weight: 700; word-break: break-all; color: var(--cyan); }
+      .ibadge {
+        font-size: 0.6rem; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+        background: var(--cyan-dim); color: var(--cyan); letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      .ibadge.store { background: var(--amber-dim); color: var(--amber); }
+      .ibadge.dir { background: var(--line); color: var(--muted); }
+      .ibadge.ok { background: var(--lime-dim); color: var(--lime); }
+      .ibadge.warn { background: var(--coral-dim); color: var(--coral); }
+      .insp-sec {
+        display: flex; align-items: center; gap: 9px;
+        margin: 15px 0 8px;
+        font-family: var(--mono); font-size: 0.64rem;
+        letter-spacing: 0.1em; text-transform: uppercase; color: var(--lime);
+      }
+      .insp-sec .api-ref { color: var(--faint); text-transform: none; letter-spacing: 0; }
+      .insp-sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+      .kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .kv .cell {
+        min-width: 0; padding: 8px 10px;
+        border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-2);
+      }
+      .kv .cell.wide { grid-column: 1 / -1; }
+      .kv .cell .k {
+        font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--faint); margin-bottom: 3px;
+      }
+      .kv .cell .v { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); overflow-wrap: anywhere; }
+      .kv .cell .v .dim { color: var(--faint); }
+      .kv .cell .v .ok { color: var(--lime); }
+      .kv .cell .s { font-family: var(--mono); font-size: 0.62rem; color: var(--faint); margin-top: 3px; }
+      .xf-rows { display: flex; flex-direction: column; gap: 6px; }
+      .xf-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-2); font-family: var(--mono); font-size: 0.72rem;
+      }
+      .xf-row .xf-id { color: var(--lime); font-weight: 700; flex-shrink: 0; }
+      .xf-row .xf-nm { color: var(--ink); }
+      .xf-row .xf-sz { margin-left: auto; color: var(--faint); flex-shrink: 0; }
+      .pseg {
+        display: inline-flex; gap: 2px; padding: 3px;
+        border: 1px solid var(--line-2); border-radius: var(--r-sm);
+        background: var(--bg-2);
+      }
+      .pseg button {
+        padding: 6px 11px; border-radius: 6px;
+        font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+        transition: background 0.15s, color 0.15s;
+      }
+      .pseg button:hover:not(.on) { background: var(--raise); color: var(--ink); }
+      .pseg button.on { background: var(--lime); color: #0a0c08; font-weight: 600; }
+      .pstats { font-family: var(--mono); font-size: 0.68rem; color: var(--faint); margin: 8px 0; }
+      .pstats b { color: var(--cyan); font-weight: 600; }
+      .preview.hexview { font-size: 0.68rem; line-height: 1.6; white-space: pre; overflow-x: auto; }
 
       /* stream — live write→read demo */
       .sstep { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.05em;
@@ -1384,6 +1447,7 @@
         .shield-intro { padding: 14px; }
         .lanes { grid-template-columns: 1fr; }
         .cm-row { grid-template-columns: 1fr; gap: 6px; }
+        .kv { grid-template-columns: 1fr; }
         .hero-cta .btn { flex: 1; }
         .toolbar .action { flex: 1; justify-content: center; }
       }
@@ -1476,9 +1540,9 @@
           <svg viewBox="0 0 24 24" fill="none"><path d="M4 7 12 3l8 4v10l-8 4-8-4z M12 3v18 M4 7l8 4 8-4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
           <span class="tab-text"><span class="tab-label" id="tab-label-start">1 Forge</span><span class="tab-copy">Pick samples or drop files, then build a ZIP.</span></span>
         </button>
-        <button class="tab" id="inspect-tab" data-station="inspect" role="tab" aria-label="2 Inspect: open an archive and read entries three ways">
+        <button class="tab" id="inspect-tab" data-station="inspect" role="tab" aria-label="2 Inspect: open an archive, decode every entry's metadata, timestamps, and payload">
           <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          <span class="tab-text"><span class="tab-label">2 Inspect <span class="num" id="tab-entries">0</span></span><span class="tab-copy">Open an archive and read entries three ways.</span></span>
+          <span class="tab-text"><span class="tab-label">2 Inspect <span class="num" id="tab-entries">0</span></span><span class="tab-copy">Decode metadata, timestamps, attributes &amp; payloads.</span></span>
         </button>
         <button class="tab" id="stream-tab" data-station="stream" role="tab" aria-label="3 Stream: emit ZIP chunks while entries are still writing">
           <svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h16M4 16h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -1535,6 +1599,15 @@
                     <label><input type="radio" name="zip64" value="force" /><span>force</span></label>
                     <label><input type="radio" name="zip64" value="off" /><span>off</span></label>
                   </div>
+                </div>
+              </div>
+
+              <div class="field" style="margin-top: 16px">
+                <label>Timestamp extras · <code style="color: var(--cyan)">TimestampMode</code> bitmask — readable later in Inspect</label>
+                <div class="seg" role="radiogroup">
+                  <label><input type="radio" name="ts" value="1" /><span>DOS only</span></label>
+                  <label><input type="radio" name="ts" value="3" checked /><span>+ Unix 0x5455</span></label>
+                  <label><input type="radio" name="ts" value="7" /><span>+ NTFS 0x000a</span></label>
                 </div>
               </div>
 
@@ -1604,9 +1677,24 @@
                   <select id="reader-source">
                     <option value="blob" selected>Blob / File</option>
                     <option value="arraybuffer">ArrayBuffer</option>
+                    <option value="uint8array">Uint8Array</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Filename encoding</label>
+                  <select id="fn-encoding">
+                    <option value="utf-8" selected>utf-8</option>
+                    <option value="cp437">cp437</option>
+                    <option value="shift_jis">shift_jis</option>
+                    <option value="euc-kr">euc-kr</option>
+                    <option value="gb18030">gb18030</option>
+                    <option value="windows-1251">windows-1251</option>
+                    <option value="windows-1252">windows-1252</option>
                   </select>
                 </div>
               </div>
+
+              <div class="kv" id="arch-meta" style="display: none; margin-bottom: 16px"></div>
 
               <div class="ribbon" id="ribbon" style="display: none"></div>
               <div class="ribbon-key" id="ribbon-key" style="display: none">
@@ -1626,9 +1714,9 @@
           </div>
 
           <div class="panel" id="entry-reader-panel">
-            <div class="panel-head"><h3>Entry reader</h3><span class="tag">text() · bytes() · arrayBuffer()</span></div>
+            <div class="panel-head"><h3>Entry inspector</h3><span class="tag">full ZipRandomAccessEntry surface</span></div>
             <div class="panel-body">
-              <pre class="preview" id="preview">Select an entry to read it three ways and verify its CRC&#8209;32.</pre>
+              <div id="inspector"><div class="empty">Select an entry to inspect its metadata — sizes, CRC&#8209;32, timestamps, attributes, extra fields — and read its payload four ways.</div></div>
             </div>
           </div>
         </div>
@@ -1755,13 +1843,12 @@
         );
       }
 
-      const {
-        default: JSZipp,
-        ZipTransformStream,
-        ZipWriter,
-        openZip,
-        readZipStream,
-      } = await loadJSZippModule();
+      loadJSZippModule().then(function(mod) {
+      var JSZipp = mod.default;
+      var ZipTransformStream = mod.ZipTransformStream;
+      var ZipWriter = mod.ZipWriter;
+      var openZip = mod.openZip;
+      var readZipStream = mod.readZipStream;
 
       const $ = (s) => document.querySelector(s);
       const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -1781,18 +1868,22 @@
         view: [],            // filtered entry indices currently shown
         maxC: 1,             // largest compressedSize, for bar scaling
         entryFilter: "",
-        entriesPaint: null   // repaint the visible virtual window
+        entriesPaint: null,  // repaint the visible virtual window
+        insp: null           // cached payload reads for the selected entry
       };
 
       // sample entry manifest -------------------------------------------------
       const SAMPLES = [
         { id: "notes", path: "notes.txt", on: true, method: "deflate",
-          data: "Hello from JSZipp. Written as a string entry with a comment, a modified date, and a custom extra field.\n",
-          meta: { comment: "string payload · extraField + mtime", modifiedAt: new Date(),
+          data: "Hello from JSZipp. Written as a string entry with a comment, three distinct timestamps, and a custom extra field.\n",
+          meta: { comment: "string payload · extraField + 3 timestamps",
+            modifiedAt: new Date("2026-04-07T09:30:12"),
+            createdAt: new Date("2026-01-15T08:00:00"),
+            lastAccess: new Date("2026-06-01T17:45:30"),
             extraField: new Uint8Array([0x99, 0x99, 0x02, 0x00, 0xaa, 0xbb]) } },
         { id: "readme", path: "README.md", on: true, method: "deflate",
           data: "# Generated by JSZipp\n\nThis archive was forged in the browser demo.\nEvery byte here was DEFLATE-compressed by JSZipp's writer.\n".repeat(6),
-          meta: { comment: "markdown sample" } },
+          meta: { comment: "markdown sample", modifiedAt: new Date("2025-11-20T12:00:00") } },
         { id: "report", path: "data/report.json", on: true, method: "deflate",
           data: JSON.stringify({ library: "JSZipp", api: "ZipWriter", entries: 7, generatedAt: "2026-01-01T00:00:00Z", nested: { ok: true, items: [1, 2, 3, 4, 5] } }, null, 2),
           meta: { comment: "json sample" } },
@@ -1801,9 +1892,9 @@
           meta: { comment: "stored binary (pre-compressed)" } },
         { id: "script", path: "scripts/run.sh", on: true, method: "deflate",
           data: "#!/bin/sh\necho \"JSZipp preserves unix mode bits\"\nexit 0\n",
-          meta: { comment: "executable", unixMode: 0o100755 } },
+          meta: { comment: "executable", unixPermissions: 0o755 } },
         { id: "dir", path: "assets/", on: true, data: "",
-          meta: { unixMode: 0o040755 } }
+          meta: { unixPermissions: 0o755 } }
       ];
 
       const els = {
@@ -1819,9 +1910,9 @@
         btnBuild: $("#btn-build"), btnCancel: $("#btn-cancel"), btnDownload: $("#btn-download"),
         cbars: $("#cbars"),
         dropZip: $("#drop-zip"), zipInput: $("#zip-input"),
-        pathMode: $("#path-mode"), readerSource: $("#reader-source"),
-        ribbon: $("#ribbon"), ribbonKey: $("#ribbon-key"),
-        entries: $("#entries"), preview: $("#preview"),
+        pathMode: $("#path-mode"), readerSource: $("#reader-source"), fnEncoding: $("#fn-encoding"),
+        ribbon: $("#ribbon"), ribbonKey: $("#ribbon-key"), archMeta: $("#arch-meta"),
+        entries: $("#entries"), inspector: $("#inspector"),
         entryFilter: $("#entry-filter"), entriesCount: $("#entries-count"),
         tabEntries: $("#tab-entries"),
         sledIn: $("#sled-in"), sGap: $("#s-gap"), streamBar: $("#stream-bar"),
@@ -1857,10 +1948,16 @@
         els.level.style.setProperty("--pct", (6 / 9 * 100) + "%");
         els.archComment.addEventListener("input", () => { state.archiveComment = els.archComment.value; });
         els.btnBuild.addEventListener("click", buildZip);
-        els.btnCancel.addEventListener("click", () => state.abort?.abort());
+        els.btnCancel.addEventListener("click", () => { if (state.abort) state.abort.abort(); });
         els.btnDownload.addEventListener("click", download);
         els.pathMode.addEventListener("change", () => { log("openZip", "pathMode = " + els.pathMode.value); reopen(); });
         els.readerSource.addEventListener("change", () => { log("openZip", "source = " + els.readerSource.value); reopen(); });
+        els.fnEncoding.addEventListener("change", () => { log("openZip", "filenameEncoding = " + els.fnEncoding.value); reopen(); });
+        // payload view switcher: one delegated handler for the inspector's pseg buttons
+        els.inspector.addEventListener("click", (ev) => {
+          const b = ev.target.closest("[data-pmode]");
+          if (b) setPayloadMode(b.dataset.pmode);
+        });
         els.btnTransform.addEventListener("click", runTransform);
         els.btnScan.addEventListener("click", scanArchive);
         renderShields();
@@ -2031,15 +2128,15 @@
       }
 
       async function droppedFiles(dataTransfer) {
-        const items = Array.from(dataTransfer?.items || []);
+        const items = Array.from((dataTransfer && dataTransfer.items) || []);
         const entries = items
           .map((item) => typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null)
           .filter(Boolean);
-        if (!entries.length) return Array.from(dataTransfer?.files || []);
+        if (!entries.length) return Array.from((dataTransfer && dataTransfer.files) || []);
 
         const files = [];
         for (const entry of entries) await collectEntryFiles(entry, "", files);
-        return files.length ? files : Array.from(dataTransfer?.files || []);
+        return files.length ? files : Array.from((dataTransfer && dataTransfer.files) || []);
       }
 
       async function collectEntryFiles(entry, prefix, files) {
@@ -2093,11 +2190,20 @@
         state.abort = abort;
 
         const out = radio("out");
+        const ts = Number(radio("ts"));
         const queued = [];
         let est = 0;
 
+        // unixPermissions requires TimestampMode.Unix — drop it for DOS-only builds
+        const metaFor = (meta) => {
+          if (!meta || meta.unixPermissions === undefined || (ts & 2)) return meta;
+          const m = Object.assign({}, meta);
+          delete m.unixPermissions;
+          return m;
+        };
+
         // assemble the entry list first so we can size the progress ring
-        for (const s of SAMPLES) if (s.on) queued.push({ path: s.path, data: s.data, method: s.method, meta: s.meta });
+        for (const s of SAMPLES) if (s.on) queued.push({ path: s.path, data: s.data, method: s.method, meta: metaFor(s.meta) });
         for (const u of state.userFiles) if (u.on) queued.push({
           path: filePath(u.file), data: u.file,
           method: shouldStore(u.file.name) ? "store" : "deflate",
@@ -2114,6 +2220,7 @@
           const writer = new ZipWriter({
             level: Number(els.level.value),
             zip64: radio("zip64"),
+            timestamps: ts,
             outputAs: out,
             mimeType: "application/zip",
             comment: state.archiveComment || "",
@@ -2124,7 +2231,7 @@
             }
           });
 
-          log("ZipWriter", `new · level ${els.level.value} · zip64 ${radio("zip64")} · outputAs ${out}`);
+          log("ZipWriter", `new · level ${els.level.value} · zip64 ${radio("zip64")} · timestamps ${ts} · outputAs ${out}`);
           for (const e of queued) await writer.add(e);
           const closed = await writer.close();
           setRing(1);
@@ -2142,7 +2249,7 @@
           renderCompressionBars();
           toast("Archive forged and opened in Inspect.");
         } catch (err) {
-          if (err?.name === "AbortError") { els.buildPhase.textContent = "Cancelled by AbortSignal."; log("abort", "ZipWriter cancelled", true); }
+          if (err && err.name === "AbortError") { els.buildPhase.textContent = "Cancelled by AbortSignal."; log("abort", "ZipWriter cancelled", true); }
           else fail(err);
           setRing(0);
         } finally {
@@ -2193,21 +2300,44 @@
         await closeReader();
         state.archive = archive;
         try {
-          const source = els.readerSource.value === "arraybuffer" && archive instanceof Blob
-            ? await archive.arrayBuffer() : archive;
+          let source = archive;
+          let srcLabel = typeof File !== "undefined" && archive instanceof File ? "File" : "Blob";
+          if (archive instanceof Blob && els.readerSource.value === "arraybuffer") { source = await archive.arrayBuffer(); srcLabel = "ArrayBuffer"; }
+          else if (archive instanceof Blob && els.readerSource.value === "uint8array") { source = new Uint8Array(await archive.arrayBuffer()); srcLabel = "Uint8Array"; }
           state.reader = await openZip(source, {
             pathMode: els.pathMode.value,
+            filenameEncoding: els.fnEncoding.value,
             onProgress(p) { if (p.phase === "parse" && p.entries) setVizState("parsing " + p.entries); }
           });
           state.selected = -1;
+          state.insp = null;
+          els.inspector.innerHTML = `<div class="empty">Select an entry to inspect its metadata and read its payload.</div>`;
           els.btnScan.disabled = false;
           vizHot("workflow-inspect-defend-tile", true); setTimeout(() => vizHot("workflow-inspect-defend-tile", false), 700);
-          log("openZip", `${state.reader.entries.length} entries · pathMode ${els.pathMode.value} · ${els.readerSource.value}`);
+          log("openZip", `${state.reader.entries.length} entries · pathMode ${els.pathMode.value} · ${srcLabel} · ${els.fnEncoding.value}`);
           renderEntries();
+          renderArchMeta(srcLabel);
           renderRibbon();
           updateStats();
           if (switchTab) selectTab("inspect");
         } catch (err) { fail(err); renderEntriesError(err); }
+      }
+
+      // archive-level reader surface: reader.comment, entry totals, newest mtime
+      function renderArchMeta(srcLabel) {
+        const r = state.reader;
+        if (!r) { els.archMeta.style.display = "none"; return; }
+        const files = r.entries.filter((e) => !e.isDirectory);
+        let unc = 0, comp = 0, newest = null;
+        for (const e of files) { unc += e.size; comp += e.compressedSize; }
+        for (const e of r.entries) if (e.modifiedAt && (!newest || e.modifiedAt > newest)) newest = e.modifiedAt;
+        els.archMeta.style.display = "grid";
+        els.archMeta.innerHTML =
+          kvCell("entries", `${r.entries.length}<span class="dim"> · ${files.length} file${files.length === 1 ? "" : "s"}, ${r.entries.length - files.length} dir</span>`) +
+          kvCell("payload", `${formatBytes(unc)} <span class="dim">→</span> ${formatBytes(comp)}`) +
+          kvCell("newest mtime", esc(fmtDate(newest))) +
+          kvCell("opened from", `${esc(srcLabel)}<span class="dim"> · ${esc(els.pathMode.value)}</span>`) +
+          kvCell("reader.comment", r.comment ? `“${esc(r.comment)}”` : `<span class="dim">— none in EOCD —</span>`, "", true);
       }
 
       async function reopen() { if (state.archive) await inspect(state.archive); }
@@ -2286,7 +2416,7 @@
               <span class="ei ${e.isDirectory ? "dir" : ""}">${icon}</span>
               <span class="ep" title="${esc(e.path)}">${esc(e.path)}</span>
               <span class="ebar"><i style="width:${e.isDirectory ? 0 : w}%"></i></span>
-              <span class="emeta">${e.isDirectory ? "dir" : formatBytes(e.size)} · ${crcHex(e.crc32)}</span>
+              <span class="emeta">${e.isDirectory ? "dir" : formatBytes(e.size)} · ${shortDate(e.modifiedAt)}</span>
             </div>`;
           }
           rows.innerHTML = html;
@@ -2301,6 +2431,7 @@
         setEntriesEmpty(`${esc(err.name || "Error")} · ${esc(err.message)}`, "var(--coral)");
         updateEntryCount(0, 0);
         els.ribbon.style.display = "none"; els.ribbonKey.style.display = "none";
+        els.archMeta.style.display = "none";
         els.tabEntries.textContent = "0";
       }
 
@@ -2337,25 +2468,207 @@
         els.ribbon.innerHTML = segs + `<span class="seg-b" style="flex:${cd};background:var(--lime)" title="Central directory + EOCD"></span>`;
       }
 
+      // ---- entry inspector: the full ZipRandomAccessEntry surface ----
+      const EXTRA_NAMES = {
+        0x0001: "ZIP64 sizes/offset",
+        0x000a: "NTFS timestamps",
+        0x5455: "Extended timestamp",
+        0x7075: "Unicode path",
+        0x7875: "Unix uid/gid",
+        0x9999: "custom field (demo sample)"
+      };
+
+      function kvCell(k, v, sub = "", wide = false) {
+        return `<div class="cell${wide ? " wide" : ""}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
+      }
+
+      // split e.extraField into its [id, size, data] records
+      function parseExtras(ef) {
+        const out = [];
+        if (!ef || ef.length < 4) return out;
+        const v = new DataView(ef.buffer, ef.byteOffset, ef.byteLength);
+        let o = 0;
+        while (o + 4 <= ef.length) {
+          const id = v.getUint16(o, true), sz = v.getUint16(o + 2, true);
+          out.push({ id, size: sz });
+          o += 4 + sz;
+        }
+        return out;
+      }
+
+      // which on-disk field produced entry.modifiedAt (mirrors reader precedence)
+      function tsSource(e, ids) {
+        if (e.createdAt || e.lastAccess) return "NTFS extra 0x000a · 100 ns ticks, UTC";
+        if (ids.has(0x5455)) return "Extended timestamp 0x5455 · 1 s, UTC";
+        return "DOS date/time field · 2 s, local";
+      }
+
+      function rwxString(mode) {
+        const t = mode & 0xf000;
+        let s = t === 0x4000 ? "d" : t === 0xa000 ? "l" : t === 0x8000 ? "-" : "?";
+        for (let i = 8; i >= 0; i--) s += (mode >> i) & 1 ? "rwxrwxrwx"[8 - i] : "-";
+        return s;
+      }
+
+      function dosAttrString(b) {
+        const names = [[0x01, "read-only"], [0x02, "hidden"], [0x04, "system"], [0x10, "directory"], [0x20, "archive"]];
+        const on = names.filter(([bit]) => b & bit).map(([, n]) => n);
+        return on.length ? on.join(", ") : "none";
+      }
+
+      function hexDump(bytes, cap = 512) {
+        const n = Math.min(bytes.length, cap);
+        let out = "";
+        for (let o = 0; o < n; o += 16) {
+          let hex = "", asc = "";
+          for (let i = 0; i < 16; i++) {
+            if (o + i < n) {
+              const b = bytes[o + i];
+              hex += b.toString(16).padStart(2, "0") + (i === 7 ? "  " : " ");
+              asc += b >= 32 && b < 127 ? String.fromCharCode(b) : "·";
+            } else hex += i === 7 ? "    " : "   ";
+          }
+          out += o.toString(16).padStart(8, "0") + "  " + hex + " " + asc + "\n";
+        }
+        if (bytes.length > cap) out += `… ${formatBytes(bytes.length - cap)} more not shown`;
+        return out;
+      }
+
       async function preview(i) {
         const r = state.reader; if (!r) return;
         const e = r.entries[i];
         state.selected = i; if (state.entriesPaint) state.entriesPaint(); else renderEntries();
-        if (e.isDirectory) { els.preview.innerHTML = `<span class="hl-c">${esc(e.path)}</span>\n\nDirectory entry · unixMode ${octal(e.unixMode)}\nNo payload.`; return; }
+        state.insp = { idx: i, mode: "text", text: null, bytes: null, binary: false, chunks: null };
+
+        const extras = parseExtras(e.extraField);
+        const ids = new Set(extras.map((x) => x.id));
+        const isStore = !e.isDirectory && e.compressedSize === e.size;
+        const dup = r.get(e.path) === e;
+        const ext = e.externalAttributes >>> 0;
+        const unixMode = ext >>> 16;
+        const saved = e.size ? (1 - e.compressedSize / e.size) * 100 : 0;
+
+        const head =
+          `<div class="insp-head"><span class="insp-path">${esc(e.path)}</span>` +
+          (e.isDirectory ? `<span class="ibadge dir">directory</span>` : `<span class="ibadge ${isStore ? "store" : ""}">${isStore ? "store" : "deflate"}</span>`) +
+          (dup ? `<span class="ibadge ok">get() target</span>` : `<span class="ibadge warn">shadowed — get() returns a later duplicate</span>`) +
+          `</div>`;
+
+        const identity =
+          `<div class="insp-sec">identity &amp; integrity</div><div class="kv">` +
+          kvCell("size", e.isDirectory ? `<span class="dim">—</span>` : formatBytes(e.size), e.isDirectory ? "" : e.size + " bytes uncompressed") +
+          kvCell("compressed", e.isDirectory ? `<span class="dim">—</span>` : formatBytes(e.compressedSize),
+            e.isDirectory ? "" : (isStore ? "stored as-is" : "−" + Math.max(0, saved).toFixed(1) + "% via DEFLATE")) +
+          kvCell("crc-32", `${crcHex(e.crc32)} <span class="dim" id="crc-state">· checked on every read</span>`, "", true) +
+          `</div>`;
+
+        const timestamps =
+          `<div class="insp-sec">timestamps <span class="api-ref">modifiedAt · createdAt · lastAccess</span></div><div class="kv">` +
+          kvCell("modified", esc(fmtDate(e.modifiedAt)), esc(tsSource(e, ids)), true) +
+          kvCell("created", e.createdAt ? esc(fmtDate(e.createdAt)) : `<span class="dim">— no NTFS extra —</span>`, e.createdAt ? "NTFS extra 0x000a" : "") +
+          kvCell("accessed", e.lastAccess ? esc(fmtDate(e.lastAccess)) : `<span class="dim">— no NTFS extra —</span>`, e.lastAccess ? "NTFS extra 0x000a" : "") +
+          `</div>`;
+
+        const attributes =
+          `<div class="insp-sec">attributes <span class="api-ref">externalAttributes</span></div><div class="kv">` +
+          kvCell("unix mode", unixMode ? `${octal(unixMode)} <span class="ok">${rwxString(unixMode)}</span>` : `<span class="dim">— not recorded —</span>`,
+            unixMode ? "externalAttributes &gt;&gt;&gt; 16" : "high 16 bits are zero") +
+          kvCell("dos attributes", "0x" + (ext & 0xff).toString(16).padStart(2, "0"), esc(dosAttrString(ext & 0xff))) +
+          kvCell("raw u32", "0x" + ext.toString(16).padStart(8, "0")) +
+          kvCell("comment", e.comment ? `“${esc(e.comment)}”` : `<span class="dim">— none —</span>`) +
+          `</div>`;
+
+        const extraRows = extras.map((x) =>
+          `<div class="xf-row"><span class="xf-id">0x${x.id.toString(16).padStart(4, "0")}</span><span class="xf-nm">${EXTRA_NAMES[x.id] || "unknown vendor field"}</span><span class="xf-sz">${x.size} B</span></div>`).join("");
+        const extraSec =
+          `<div class="insp-sec">extra fields <span class="api-ref">entry.extraField (central directory)</span></div>` +
+          (extras.length
+            ? `<div class="xf-rows">${extraRows}</div><pre class="preview hexview" style="min-height:0;margin-top:8px">${esc(hexDump(e.extraField, 96))}</pre>`
+            : `<div class="xf-rows"><div class="xf-row"><span class="xf-nm" style="color:var(--faint)">none — entry.extraField is undefined</span></div></div>`);
+
+        if (e.isDirectory) {
+          els.inspector.innerHTML = head + identity + timestamps + attributes + extraSec +
+            `<div class="insp-sec">payload</div><div class="pstats">Directory entries carry no payload — <b>skip()</b> them in streaming reads.</div>`;
+          log("entry.meta", `${e.path} · directory metadata inspected`);
+          return;
+        }
+
+        els.inspector.innerHTML = head + identity + timestamps + attributes + extraSec +
+          `<div class="insp-sec">payload <span class="api-ref">text() · bytes() · arrayBuffer() · stream()</span></div>` +
+          `<div class="pstats" id="pstats">reading…</div>` +
+          `<div class="pseg" id="pseg" style="margin-bottom:10px">
+            <button data-pmode="text">text()</button>
+            <button data-pmode="hex">bytes() hex</button>
+            <button data-pmode="stream">stream()</button>
+          </div>` +
+          `<pre class="preview" id="payload-view">decompressing…</pre>`;
+
         try {
           const text = await e.text();
           const b = await e.bytes();
           const ab = await e.arrayBuffer();
-          const latest = r.get(e.path);
-          const dupNote = latest === e ? "reader.get() target for this path" : "reader.get() returns a later duplicate";
-          log("entry.read", `${e.path} · text/bytes/arrayBuffer`);
-          els.preview.innerHTML =
-            `<span class="hl-c">${esc(e.path)}</span>  <span style="color:var(--faint)">(${dupNote})</span>\n` +
-            `<span class="hl">text()</span> ${b.byteLength} chars · <span class="hl">bytes()</span> ${b.byteLength} B · <span class="hl">arrayBuffer()</span> ${ab.byteLength} B\n` +
-            `crc32 <span class="hl">${crcHex(e.crc32)}</span> · size ${formatBytes(e.size)} → ${formatBytes(e.compressedSize)} · mode ${octal(e.unixMode)}\n` +
-            (e.comment ? `comment "${esc(e.comment)}"\n` : "") +
-            `${"─".repeat(40)}\n${esc(textPreview(text, isBinary(b)))}`;
-        } catch (err) { fail(err); els.preview.innerHTML = `<span style="color:var(--coral)">${esc(err.name)} · ${esc(err.message)}</span>`; }
+          if (!state.insp || state.insp.idx !== i) return;   // user moved on mid-read
+          state.insp.text = text;
+          state.insp.bytes = b;
+          state.insp.binary = isBinary(b);
+          state.insp.mode = state.insp.binary ? "hex" : "text";
+          const crcState = $("#crc-state");
+          if (crcState) { crcState.innerHTML = `· <span style="color:var(--lime)">✓ verified during inflate</span>`; }
+          $("#pstats").innerHTML =
+            `<b>text()</b> ${text.length} chars · <b>bytes()</b> ${b.byteLength} B · <b>arrayBuffer()</b> ${ab.byteLength} B · <b>stream()</b> ReadableStream`;
+          log("entry.read", `${e.path} · text/bytes/arrayBuffer · crc32 ok`);
+          renderPayload();
+        } catch (err) {
+          fail(err);
+          const pv = $("#payload-view");
+          if (pv) pv.innerHTML = `<span style="color:var(--coral)">${esc(err.name)} · ${esc(err.message)}</span>`;
+        }
+      }
+
+      function setPayloadMode(mode) {
+        if (!state.insp || state.insp.bytes === null) return;
+        state.insp.mode = mode;
+        renderPayload();
+      }
+
+      function renderPayload() {
+        const insp = state.insp;
+        const pv = $("#payload-view");
+        if (!insp || !pv) return;
+        $$("#pseg button").forEach((b) => b.classList.toggle("on", b.dataset.pmode === insp.mode));
+        pv.classList.toggle("hexview", insp.mode === "hex");
+        if (insp.mode === "text") {
+          pv.textContent = textPreview(insp.text, insp.binary);
+        } else if (insp.mode === "hex") {
+          pv.textContent = hexDump(insp.bytes);
+        } else if (insp.chunks !== null) {
+          pv.textContent = insp.chunks;
+        } else {
+          pv.textContent = "reading entry.stream()…";
+          loadStreamChunks(insp);
+        }
+      }
+
+      async function loadStreamChunks(insp) {
+        const e = state.reader && state.reader.entries[insp.idx];
+        if (!e) return;
+        try {
+          const rd = e.stream().getReader();
+          const rows = []; let total = 0, k = 0;
+          while (true) {
+            const { value, done } = await rd.read();
+            if (done) break;
+            k++; total += value.byteLength;
+            rows.push(`chunk #${k}  +${formatBytes(value.byteLength)}  Σ ${formatBytes(total)}`);
+          }
+          insp.chunks = (rows.join("\n") || "(empty stream)") +
+            `\n\n${k} chunk(s) · ${formatBytes(total)} total — a fresh ReadableStream per stream() call`;
+          log("entry.stream", `${e.path} · ${k} chunk(s) · ${formatBytes(total)}`);
+        } catch (err) {
+          insp.chunks = `${err.name} · ${err.message}`;
+          fail(err);
+        }
+        if (state.insp === insp && insp.mode === "stream") renderPayload();
       }
 
       // ------------------------------------------------------------- STREAM
@@ -2449,7 +2762,8 @@
         vizHot("workflow-inspect-defend-tile", true); setVizState("iterating");
         try {
           let n = 0;
-          for await (const entry of readZipStream(state.archive.stream(), { pathMode: els.pathMode.value })) {
+          const _streamIter = readZipStream(state.archive.stream(), { pathMode: els.pathMode.value })[Symbol.asyncIterator]();
+          for (let _step = await _streamIter.next(); !_step.done; _step = await _streamIter.next()) { const entry = _step.value;
             n++;
             let label, klass, detail, snippet = "";
             if (entry.isDirectory) { await entry.skip(); label = "skip"; klass = "skip"; detail = "directory"; }
@@ -2500,10 +2814,10 @@
             try { await openZip(bytes, { pathMode: "strict" }); strict = null; }
             catch (e) { strict = e; }
             const san = await openZip(bytes, { pathMode: "sanitize" });
-            const recovered = san.entries[0]?.path; await san.close();
-            log("openZip", `strict rejected ../evil.txt · ${strict?.name}`, !strict);
+            const recovered = san.entries[0] ? san.entries[0].path : undefined; await san.close();
+            log("openZip", `strict rejected ../evil.txt · ${strict && strict.name}`, !strict);
             return [
-              ["block", "strict", `${strict?.name || "—"} · the traversal path is refused`],
+              ["block", "strict", `${(strict && strict.name) || "—"} · the traversal path is refused`],
               ["note", "sanitize", `recovered as <b>${esc(recovered)}</b> inside the root`]
             ];
           }
@@ -2520,10 +2834,10 @@
             bytes = patchPath(bytes, "dup-2.txt", "dup-x.txt");
             const lenient = await openZip(bytes); const kept = lenient.entries.length; await lenient.close();
             let pkg; try { await openZip(bytes, { pathMode: "strict-package" }); pkg = null; } catch (e) { pkg = e; }
-            log("openZip", `strict-package rejected duplicate · ${pkg?.name}`, !pkg);
+            log("openZip", `strict-package rejected duplicate · ${pkg && pkg.name}`, !pkg);
             return [
               ["allow", "default", `preserves both — <b>${kept}</b> entries; JSZipp get() returns the later one`],
-              ["block", "strict-package", `${pkg?.name || "—"} · the collision is refused`]
+              ["block", "strict-package", `${(pkg && pkg.name) || "—"} · the collision is refused`]
             ];
           }
         },
@@ -2537,10 +2851,10 @@
             await w.add({ path: "bomb.bin", data: big, method: "deflate" });
             const bytes = await w.close();
             let capped; try { await openZip(bytes, { maxArchiveSize: 1024 }); capped = null; } catch (e) { capped = e; }
-            log("openZip", `maxArchiveSize rejected ${formatBytes(bytes.length)} · ${capped?.name}`, !capped);
+            log("openZip", `maxArchiveSize rejected ${formatBytes(bytes.length)} · ${capped && capped.name}`, !capped);
             return [
               ["note", "compressed", `${formatBytes(bytes.length)} on disk, ${formatBytes(big.length)} when expanded`],
-              ["block", "maxArchiveSize: 1KB", `${capped?.name || "—"} · refused before inflating`]
+              ["block", "maxArchiveSize: 1KB", `${(capped && capped.name) || "—"} · refused before inflating`]
             ];
           }
         },
@@ -2556,10 +2870,10 @@
             const z = await openZip(bytes, { maxEntrySize: 4096 });
             let stopped; try { await z.get("huge.bin").bytes(); stopped = null; } catch (e) { stopped = e; }
             await z.close();
-            log("entry.bytes", `maxEntrySize stopped inflate · ${stopped?.name}`, !stopped);
+            log("entry.bytes", `maxEntrySize stopped inflate · ${stopped && stopped.name}`, !stopped);
             return [
               ["allow", "open", "header parsed — the lie isn't visible yet"],
-              ["block", "maxEntrySize: 4KB", `${stopped?.name || "—"} · inflate halted past the cap`]
+              ["block", "maxEntrySize: 4KB", `${(stopped && stopped.name) || "—"} · inflate halted past the cap`]
             ];
           }
         }
@@ -2647,7 +2961,7 @@
         els.tabEntries.textContent = String(n);
         if (els.zipCount) els.zipCount.textContent = `${n} entries`;
         if (state.downloadBlob) els.sSize.textContent = formatBytes(state.downloadBlob.size);
-        else if (state.archive?.size) els.sSize.textContent = formatBytes(state.archive.size);
+        else if (state.archive && state.archive.size) els.sSize.textContent = formatBytes(state.archive.size);
         if (r && state.originalBytes && state.downloadBlob) {
           const saved = Math.max(0, (1 - state.downloadBlob.size / state.originalBytes) * 100);
           els.sRatio.textContent = saved.toFixed(0) + "%";
@@ -2674,7 +2988,7 @@
         els.ringFg.style.strokeDashoffset = String(C - C * Math.min(1, Math.max(0, frac)));
       }
       function setVizState(t) { if (els.vizState) els.vizState.textContent = t; }
-      function vizHot(id, on) { $("#" + id)?.querySelector(".node-box")?.classList.toggle("hot", on); }
+      function vizHot(id, on) { var _el = $("#" + id); if (_el) { var _nb = _el.querySelector(".node-box"); if (_nb) _nb.classList.toggle("hot", on); } }
       function runPackets() {}
 
       function selectTab(name) {
@@ -2686,8 +3000,8 @@
       }
 
       function scrollStationIntoView(station) {
-        const header = $("#site-header")?.offsetHeight || 0;
-        const tabs = $("#lab-station-tabs")?.offsetHeight || 0;
+        var _hEl = $("#site-header"); const header = (_hEl && _hEl.offsetHeight) || 0;
+        var _tEl = $("#lab-station-tabs"); const tabs = (_tEl && _tEl.offsetHeight) || 0;
         const gap = 18;
         const top = station.getBoundingClientRect().top + window.scrollY - header - tabs - gap;
         window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
@@ -2738,6 +3052,15 @@
       function byteLen(d) { if (typeof d === "string") return enc.encode(d).length; if (d instanceof Uint8Array) return d.length; if (d instanceof ArrayBuffer) return d.byteLength; return 0; }
       function crcHex(c) { return "0x" + (c >>> 0).toString(16).padStart(8, "0"); }
       function octal(m) { return m == null ? "—" : "0o" + m.toString(8).padStart(6, "0"); }
+      function p2(n) { return String(n).padStart(2, "0"); }
+      function fmtDate(d) {
+        if (!(d instanceof Date) || isNaN(d)) return "—";
+        return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+      }
+      function shortDate(d) {
+        if (!(d instanceof Date) || isNaN(d)) return "—";
+        return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+      }
       function isBinary(bytes) { const n = Math.min(bytes.length, 64); for (let i = 0; i < n; i++) { const b = bytes[i]; if (b === 0 || (b < 9)) return true; } return false; }
       function textPreview(t, binary) {
         if (binary) return "(binary payload — not shown as text)";
@@ -2783,6 +3106,12 @@
       }
 
       init();
+
+      }).catch(function(err) {
+        console.error(err);
+        var t = document.getElementById("toast");
+        if (t) { t.textContent = (err && err.message) || "Failed to load JSZipp."; t.classList.add("show"); }
+      });
     </script>
   </body>
 </html>

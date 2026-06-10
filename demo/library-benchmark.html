@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZIP Library Benchmark</title>
+    <script src="./common.js"></script>
     <style>
         * {
             margin: 0;
@@ -548,9 +549,7 @@
             padding: 14px 16px;
             margin-top: 22px;
             border-radius: 10px 10px 0 0;
-            background: linear-gradient(135deg,
-                color-mix(in srgb, var(--accent) 16%, var(--bg-surface)),
-                var(--bg-surface));
+            background: var(--bg-surface);
             border: 1px solid var(--border);
             border-left: 4px solid var(--accent);
             border-bottom: none;
@@ -559,14 +558,32 @@
             transition: background 0.25s ease;
         }
 
+        @supports (background: color-mix(in srgb, #fff 50%, #000)) {
+            .group-head {
+                background: linear-gradient(135deg,
+                    color-mix(in srgb, var(--accent) 16%, var(--bg-surface)),
+                    var(--bg-surface));
+            }
+
+            .group-head:hover {
+                background: linear-gradient(135deg,
+                    color-mix(in srgb, var(--accent) 24%, var(--bg-surface)),
+                    var(--bg-surface));
+            }
+        }
+
         .group-head:first-of-type {
             margin-top: 0;
         }
 
         .group-head:hover {
-            background: linear-gradient(135deg,
-                color-mix(in srgb, var(--accent) 24%, var(--bg-surface)),
-                var(--bg-surface));
+            opacity: 0.9;
+        }
+
+        @supports (background: color-mix(in srgb, #fff 50%, #000)) {
+            .group-head:hover {
+                opacity: 1;
+            }
         }
 
         .group-chevron {
@@ -612,8 +629,15 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             color: var(--accent);
-            background: color-mix(in srgb, var(--accent) 14%, transparent);
-            border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+            background: transparent;
+            border: 1px solid var(--accent);
+        }
+
+        @supports (background: color-mix(in srgb, #fff 50%, #000)) {
+            .group-count {
+                background: color-mix(in srgb, var(--accent) 14%, transparent);
+                border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+            }
         }
 
         .group-summary {
@@ -664,7 +688,13 @@
         .benchmark-row.variant {
             border-radius: 0;
             border-top: none;
-            border-left: 4px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+            border-left: 4px solid var(--accent);
+        }
+
+        @supports (border-left: 4px solid color-mix(in srgb, #fff 50%, #000)) {
+            .benchmark-row.variant {
+                border-left: 4px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+            }
         }
 
         .benchmark-row.variant.last-variant {
@@ -881,7 +911,12 @@
     </div>
 
     <script>
-        const jszippUMD = location.origin === "https://jszipp.github.io" ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/jszipp.umd.js" : "../dist/jszipp.umd.js";
+        const github = ["https://jszipp.github.io"].includes(location.origin);
+        const bucket = getBrowserCapabilityBucket();
+        const jszippBucketPath = (bucket === "cr86ff68" || bucket === "cr61ff58") ? bucket + "/" : "";
+        const jszippUMD = github
+            ? "https://cdn.jsdelivr.net/npm/web-jszipp/dist/" + jszippBucketPath + "jszipp.umd.js"
+            : "../dist/" + jszippBucketPath + "jszipp.umd.js";
         const LIBRARIES = [
             {
                 id: "jszipp",
@@ -2100,7 +2135,7 @@
                     outputAs: "arraybuffer",
                     zip64: "auto",
                     level: config.level,
-                    timestamps: library.timestamps ?? 3 /* TimestampMode.Dos | Unix */
+                    timestamps: library.timestamps != null ? library.timestamps : 3 /* TimestampMode.Dos | Unix */
                 });
 
                 for (let i = 0; i < config.fileCount; i += config.batchSize) {
@@ -2147,7 +2182,7 @@
                     outputAs: "arraybuffer",
                     zip64: "auto",
                     level: config.level,
-                    timestamps: library.timestamps ?? 3 /* TimestampMode.Dos | Unix */
+                    timestamps: library.timestamps != null ? library.timestamps : 3 /* TimestampMode.Dos | Unix */
                 });
 
                 for (let i = 0; i < config.fileCount; i += config.batchSize) {
@@ -2408,23 +2443,25 @@
                     throw new Error("client-zip did not expose downloadZip");
                 }
 
-                async function* buildFiles() {
+                async function buildFilesList() {
+                    const fileList = [];
                     for (let i = 0; i < config.fileCount; i += config.batchSize) {
                         const end = Math.min(i + config.batchSize, config.fileCount);
                         for (let j = i; j < end; j++) {
-                            yield {
+                            fileList.push({
                                 name: pathFor(j, config.fileCount),
                                 lastModified: modifiedAtFor(j),
                                 input: contentFor(j, config.fileCount)
-                            };
+                            });
                         }
-                        postProgress("compress", (end / config.fileCount) * 90, `Adding ${end.toLocaleString()}`);
+                        postProgress("compress", (end / config.fileCount) * 90, "Adding " + end.toLocaleString());
                         await yieldControl();
                     }
+                    return fileList;
                 }
 
                 const compressStart = performance.now();
-                const compressed = await clientZip(buildFiles()).arrayBuffer();
+                const compressed = await clientZip(await buildFilesList()).arrayBuffer();
                 const compressTime = performance.now() - compressStart;
                 postProgress("compress", 100, "Compressed");
                 postArchiveReady({ id: "client-zip" }, config, compressed, compressTime);
@@ -2465,8 +2502,11 @@
                 const decompressStart = performance.now();
                 postProgress("decompress", 15, "Opening");
                 const entries = [];
-                for await (const entry of confluxLib.Reader(new Blob([compressed]))) {
-                    if (!entry.directory) entries.push(entry);
+                const asyncIter = confluxLib.Reader(new Blob([compressed]))[Symbol.asyncIterator]();
+                while (true) {
+                    const step = await asyncIter.next();
+                    if (step.done) break;
+                    if (!step.value.directory) entries.push(step.value);
                 }
                 const entryMap = new Map(entries.map((entry) => [entry.name, entry]));
                 const entryCount = entryMap.size;
@@ -2488,7 +2528,7 @@
                 }
                 zipLib.configure({
                     useWebWorkers: false,
-                    useCompressionStream: library.useCompressionStream ?? true
+                    useCompressionStream: library.useCompressionStream != null ? library.useCompressionStream : true
                 });
 
                 const compressStart = performance.now();
